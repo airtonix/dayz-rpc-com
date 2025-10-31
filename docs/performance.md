@@ -172,8 +172,8 @@ modDirs[] = {
 
 Check mod impact:
 ```bash
-# Enable debug logging
-./scripts/start-server.sh --debug
+# Enable debug logging and start
+./cmd/server start --debug
 
 # Monitor memory per mod
 ps aux | grep dayz

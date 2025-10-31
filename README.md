@@ -1,145 +1,137 @@
-# DayZ Server Modding Setup
+# DayZ Expansion Server
 
-A comprehensive setup guide and configuration repository for running and modding a DayZ server.
+A streamlined DayZ server setup with the Expansion mod suite, including AI, base building, markets, and quests.
 
 ## Quick Start
 
 ### Prerequisites
-- DayZ Server files (available through SteamCMD)
-- Linux server (Ubuntu 20.04+ recommended)
-- ~100GB disk space for server files and mods
-- A Steam account with DayZ server license
+- Linux server (Ubuntu 20.04+)
+- ~100GB disk space
+- Steam account with DayZ server license
+- SteamCMD (installed automatically)
 
-### Installation Steps
+### Installation
 
-1. **Clone this repository**
+1. **Install the server**
    ```bash
-   git clone <repo-url>
-   cd dayz-server-modding
+   ./cmd/install
+   ```
+   This will:
+   - Check system requirements
+   - Install SteamCMD
+   - Download DayZ server files (~50GB)
+   - Create directory structure
+
+2. **Download mods**
+   ```bash
+   ./cmd/mods install
+   ```
+   This will:
+   - Install the mods listed in the `./config/mods.cfg`
+
+3. **Start the server**
+   ```bash
+   ./cmd/server start
    ```
 
-2. **Run the installation script**
+4. **Stop the server**
    ```bash
-   chmod +x scripts/install-server.sh
-   ./scripts/install-server.sh
+   ./cmd/server stop
    ```
 
-3. **Configure your server**
-   - Edit `config/serverDZ.cfg` with your server settings
-   - Edit `config/types.xml` for item/spawn configuration
-   - Add mods to `mods/` directory
+## Configuration
 
-4. **Start the server**
-   ```bash
-   ./scripts/start-server.sh
-   ```
+**Server Settings** → `config/serverDZ.cfg`
+- Hostname, port, difficulty, player count
+- Mod directories (auto-configured)
+
+**Mods** → `config/mods.cfg`
+- Add/remove mods by Steam Workshop ID
+- Run `./cmd/mods install` after editing
+- More Info: 
+  - `./cmd/mods help`
+  - read [./docs/mods.md](./docs/mods.md)
+
+**Items & Spawns** → `config/types.xml`
+- Item definitions and spawn rates
+
+## Management
+
+| Task | Command |
+|------|---------|
+| Server status | `./cmd/server status` |
+| View logs | `./cmd/server logs-tail` |
+| Update server | `./cmd/server update` |
+| List mods | `./cmd/mods list` |
+| Add mod | `./cmd/mods add <id> <@name>` |
+| Remove mod | `./cmd/mods remove <@name>` |
+| Update mods | `./cmd/mods update` |
+| Debug mode | `./cmd/server start --debug` |
+| Restart | `./cmd/server restart` |
+| Help | `./cmd/<tool> help` |
 
 ## Directory Structure
 
 ```
 .
-├── README.md                 # This file
-├── MODDING_GUIDE.md         # Detailed modding guide
-├── config/                  # Server configuration files
-│   ├── serverDZ.cfg         # Main server config
-│   ├── types.xml            # Item types configuration
-│   ├── mission.xml          # Mission/scenario config
-│   └── templates/           # Config templates
-├── mods/                    # Custom mods
-│   ├── YOUR_MOD_NAME/
-│   │   ├── mod.cpp
-│   │   ├── meta.cpp
-│   │   └── ...
-│   └── .gitignore
-├── scripts/                 # Helper scripts
-│   ├── install-server.sh    # Initial server setup
-│   ├── start-server.sh      # Start server
-│   ├── stop-server.sh       # Stop server
-│   ├── update-mods.sh       # Update installed mods
-│   └── manage-mods.sh       # Manage mod dependencies
-├── tools/                   # Development tools
-│   ├── workbench-tools/     # Workbench integration
-│   └── build-helpers.sh     # Build utility functions
-├── docker-compose.yml       # Docker development environment
-└── .gitignore
-
+├── cmd/                   # Command tools
+│   ├── install           # Install server and dependencies
+│   ├── mods              # Manage mods
+│   └── server            # Control server
+├── config/               # Configuration files
+│   ├── serverDZ.cfg      # Main server config
+│   ├── types.xml         # Items configuration
+│   ├── mods.cfg          # Mod list
+│   └── mission.xml       # Mission config
+├── mods/                 # Downloaded mods
+├── keys/                 # Mod signing keys
+├── logs/                 # Server logs
+├── server/               # DayZ server installation
+└── docs/                 # Detailed documentation
 ```
 
-## Key Features
+## Next Steps
 
-- **Automated Installation**: Scripts to download and setup DayZ server
-- **Mod Management**: Tools for managing mod dependencies and versions
-- **Configuration Templates**: Pre-configured templates for common setups
-- **Docker Support**: Development environment via Docker
-- **Documentation**: Comprehensive guides for modding
+- **Customize server**: Edit `config/serverDZ.cfg`
+- **Add/remove mods**: Edit `config/mods.cfg`, run `./cmd/mods install`
+- **View detailed docs**: See `docs/` directory
+- **See all commands**: `./cmd/<tool> help`
 
-## Common Tasks
+## Troubleshooting
 
-### Adding a Mod
+**Server won't start**
+- Check: `./cmd/server logs-tail`
+- Verify mods are installed: `./cmd/mods list`
+- Ensure Steam credentials are valid
 
-1. Place mod folder in `mods/` directory
-2. Add mod signature files to `keys/` directory (for client verification)
-3. Update `serverDZ.cfg` with mod name in `modDirs` setting
-4. Restart server
+**Clients can't connect**
+- Check firewall (default ports 2302-2303)
+- Verify hostname in config matches server address
+- Ensure all mods are subscribed on client
 
-### Creating a Custom Mod
-
-See [MODDING_GUIDE.md](./MODDING_GUIDE.md) for detailed instructions.
-
-### Updating Server
-
-```bash
-./scripts/update-server.sh
-```
-
-### Managing Mods
-
-```bash
-./scripts/manage-mods.sh --list          # List installed mods
-./scripts/manage-mods.sh --add mod_name  # Add a mod
-./scripts/manage-mods.sh --remove mod_name  # Remove a mod
-```
+**Mods not loading**
+- Confirm mods folder names match `serverDZ.cfg`
+- Check `.bikey` files are in `keys/` directory
+- Review logs for mod errors: `./cmd/server logs-tail`
 
 ## Documentation
 
-- **[MODDING_GUIDE.md](./MODDING_GUIDE.md)** - Complete guide to creating and modifying DayZ mods
-- **[CONFIG_GUIDE.md](./CONFIG_GUIDE.md)** - Configuration reference
-- **[PERFORMANCE_GUIDE.md](./PERFORMANCE_GUIDE.md)** - Server optimization tips
-
-## Common Issues
-
-### Server won't start
-- Check logs: `cat logs/latest.log`
-- Verify mod signatures are present
-- Ensure mods are in correct format
-
-### Clients can't connect to server
-- Check firewall rules (default port 2302-2303)
-- Verify server is listening: `netstat -tulpn | grep dayz`
-- Ensure mod signatures match between server and client
-
-### Mod conflicts
-- Use `./scripts/manage-mods.sh --check-conflicts` to identify issues
-- Review mod load order in `serverDZ.cfg`
+- [Command Tools Guide](docs/commands.md) - Detailed tool usage
+- [Installation Guide](docs/installation.md) - Step-by-step setup
+- [Configuration Reference](docs/config.md) - All config options
+- [Mod Management](docs/mods.md) - Adding/removing mods
+- [Modding Guide](docs/modding.md) - Creating custom mods
+- [Troubleshooting](docs/troubleshooting.md) - Common issues
+- [Performance Tuning](docs/performance.md) - Optimization tips
+- [Gist Review](docs/gist-review.md) - Comparison with original gist
 
 ## Resources
 
-- **Official DayZ Wiki**: https://dayz.gamepedia.com/
-- **DayZ Community Forums**: https://forums.dayz.com/
-- **Modding Tools**: https://developer.bistudio.com/
-
-## License
-
-This repository is provided as-is for DayZ server administration purposes.
-
-## Support
-
-For issues related to this setup:
-1. Check the troubleshooting section above
-2. Review logs in `logs/` directory
-3. Consult the documentation files
+- [DayZ Wiki](https://dayz.gamepedia.com/)
+- [Expansion Mod Wiki](https://github.com/salutesh/DayZ-Expansion-Scripts/wiki)
+- [BohemiaInteractive Docs](https://developer.bistudio.com/)
 
 ---
 
-**Last Updated**: 2025-10-30
-**DayZ Version**: Compatible with DayZ 1.25+
+**Last Updated**: 2025-10-31
+**DayZ Expansion Version**: Latest

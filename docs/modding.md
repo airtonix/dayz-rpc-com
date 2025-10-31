@@ -189,18 +189,14 @@ override void OnVariablesSynchronized() {
 
 ### Sign Your Mod
 
-```bash
-./scripts/sign-mod.sh MyCustomMod
-```
-
-This generates a `.bikey` file in the `keys/` directory.
+Signing keys are automatically extracted when mods are installed. Ensure your mod is properly configured in `mod.cpp` before publishing.
 
 ## Testing Your Mod
 
 ### Local Testing
 
 1. Copy mod to `mods/` directory
-2. Start server with `./scripts/start-server.sh`
+2. Start server with `./cmd/server start`
 3. Connect as admin and test functionality
 
 ### Common Test Scenarios

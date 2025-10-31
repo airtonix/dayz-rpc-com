@@ -1,0 +1,29 @@
+{
+  "mods": [
+    {
+      "id": 1559212036,
+      "name": "@cf",
+      "title": "Community Framework"
+    },
+    {
+      "id": 2545327648,
+      "name": "@df",
+      "title": "Dabs Framework"
+    },
+    {
+      "id": 2116151222,
+      "name": "@de",
+      "title": "DayZ Expansion"
+    },
+    {
+      "id": 2291785308,
+      "name": "@de-core",
+      "title": "DayZ Expansion Core"
+    },
+    {
+      "id": 2792982069,
+      "name": "@de-ai",
+      "title": "DayZ Expansion AI"
+    }
+  ]
+}

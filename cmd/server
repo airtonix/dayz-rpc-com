@@ -1,4 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# vim: set filetype=bash:
+
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -18,48 +21,52 @@ STATUS_FILE="$LOG_DIR/server-status.txt"
 PORT=${PORT:-2302}
 CPU_CORES=${CPU_CORES:-$(nproc)}
 
-print_usage() {
-    cat << EOF
-DayZ Server Manager
+TEMPLATE_USAGE="""
+ DayZ Server Manager
 
-Usage: $0 <command> [OPTIONS]
+ Usage: make <command>  OR  $0 <command> [OPTIONS]
 
-Commands:
-    start [--debug]      Start the server
-                         --debug: Run in foreground (debug mode)
-    stop                 Stop the server gracefully
-    update               Update server files via SteamCMD
-    status               Show server status
-    help                 Show this help message
+ Using make (recommended):
+     make start           - Start the server (background)
+     make start-debug     - Start the server (foreground, debug mode)
+     make stop            - Stop the server gracefully
+     make status          - Check if server is running
+     make restart         - Restart the server
+     make update          - Update server files via SteamCMD
+     make logs            - View last 100 lines of server log
+     make logs-tail       - Follow server logs in real-time
 
-Examples:
-    $0 start             # Start in background (normal)
-    $0 start --debug     # Start in foreground (debug)
-    $0 stop              # Stop the server
-    $0 update            # Update server files
-    $0 status            # Check if server is running
+  Using direct script:
+      $0 start             # Start in background (normal)
+      $0 start --debug     # Start in foreground (debug)
+      $0 stop              # Stop the server
+      $0 update            # Update server files
+      $0 status            # Check if server is running
+      $0 query             # Query server info (like gsquery)
+ """
 
-EOF
-}
+ print_usage() {
+    echo "$TEMPLATE_USAGE"
+ }
 
-check_server_exists() {
-    if [ ! -f "$SERVER_DIR/DayZServer" ]; then
-        echo "[!] Error: DayZ Server executable not found at $SERVER_DIR/DayZServer"
-        echo "[!] Please run 'cmd/install' first"
-        return 1
-    fi
-    
+ check_server_exists() {
+     if [ ! -f "$SERVER_DIR/DayZServer" ]; then
+         echo "[!] Error: DayZ Server executable not found at $SERVER_DIR/DayZServer"
+         echo "[!] Please run: make install"
+         return 1
+     fi
+
     if [ ! -f "$CONFIG_FILE" ]; then
         echo "[!] Error: Server config not found at $CONFIG_FILE"
         return 1
     fi
-    
+
     return 0
 }
 
 sync_config() {
     local source_config="$PROJECT_DIR/config/serverDZ.cfg"
-    
+
     if [ -f "$source_config" ]; then
         cp "$source_config" "$CONFIG_FILE"
     fi
@@ -71,14 +78,88 @@ announce_server() {
     echo "If on local network, try: ${hostname// /_}.local:$PORT" >> "$STATUS_FILE"
 }
 
+cmd_query() {
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo "[!] Server config not found at $CONFIG_FILE"
+        return 1
+    fi
+
+    echo "========================================"
+    echo "DayZ Server Query"
+    echo "========================================"
+    echo ""
+
+    local hostname=$(grep "^hostname" "$CONFIG_FILE" | cut -d'"' -f2)
+    local port=$(grep "^port" "$CONFIG_FILE" | cut -d' ' -f3 | tr -d ';')
+    local max_players=$(grep "^maxPlayers =" "$CONFIG_FILE" | grep -v Steam | cut -d' ' -f3 | tr -d ';')
+    local difficulty=$(grep "^difficulty" "$CONFIG_FILE" | cut -d'"' -f2)
+
+    echo "Hostname:    $hostname"
+    echo "Port:        ${port:-2302}"
+    echo "Max Players: ${max_players:-60}"
+    echo "Difficulty:  ${difficulty:-hard}"
+    echo ""
+
+    if cmd_status >/dev/null 2>&1; then
+        echo "Status:      [ONLINE]"
+        local server_pid=$(cat "$PID_FILE" 2>/dev/null)
+
+        if [ -n "$server_pid" ]; then
+            local uptime=$(ps -p "$server_pid" -o etime= 2>/dev/null | tr -d ' ' || echo "unknown")
+            echo "Uptime:      $uptime"
+
+            local memory=$(ps -p "$server_pid" -o rss= 2>/dev/null | awk '{printf "%.0f MB", $1/1024}' || echo "unknown")
+            echo "Memory:      $memory"
+
+            local cpu=$(ps -p "$server_pid" -o %cpu= 2>/dev/null | tr -d ' ' || echo "unknown")
+            echo "CPU Usage:   ${cpu}%"
+        fi
+    else
+        echo "Status:      [OFFLINE]"
+    fi
+
+    echo ""
+
+    if cmd_status >/dev/null 2>&1; then
+        echo "[+] Server is running and responding"
+
+        if [ -f "$PID_FILE" ]; then
+            local server_pid=$(cat "$PID_FILE")
+            if [ -n "$server_pid" ]; then
+                local uptime=$(ps -p "$server_pid" -o etime= 2>/dev/null | tr -d ' ' || echo "N/A")
+                local memory=$(ps -p "$server_pid" -o rss= 2>/dev/null | awk '{printf "%.0f MB", $1/1024}' || echo "N/A")
+                echo "Uptime:      $uptime"
+                echo "Memory:      $memory"
+            fi
+        fi
+    else
+        echo "[!] Server is offline"
+    fi
+
+    echo ""
+
+    local mod_count=$([ -f "$PROJECT_DIR/config/mods.json" ] && jq '.mods | length' "$PROJECT_DIR/config/mods.json" 2>/dev/null || echo "0")
+    echo "Configured Mods: $mod_count"
+
+    if [ -f "$LOG_FILE" ]; then
+        local log_lines=$(wc -l < "$LOG_FILE")
+        echo "Log entries: $log_lines lines"
+    fi
+
+    echo ""
+    echo "To query a remote server via A2S protocol:"
+    echo "  $SCRIPT_DIR/query-server <ip> [port]"
+    echo ""
+}
+
 cmd_status() {
     if [ ! -f "$PID_FILE" ]; then
         echo "[*] Server is not running (no PID file)"
         return 1
     fi
-    
+
     SERVER_PID=$(cat "$PID_FILE")
-    
+
     if kill -0 "$SERVER_PID" 2>/dev/null; then
         echo "[+] Server is running (PID: $SERVER_PID)"
         return 0
@@ -90,7 +171,7 @@ cmd_status() {
 
 cmd_start() {
     local debug_mode=false
-    
+
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --debug)
@@ -103,11 +184,11 @@ cmd_start() {
                 ;;
         esac
     done
-    
+
     sync_config
     check_server_exists || return 1
     announce_server
-    
+
     if [ -f "$PID_FILE" ]; then
         OLD_PID=$(cat "$PID_FILE")
         if kill -0 "$OLD_PID" 2>/dev/null; then
@@ -117,22 +198,27 @@ cmd_start() {
         fi
         rm -f "$PID_FILE"
     fi
-    
-    # Build mod string from mods directory
-    local mods=""
-    if [ -d "$PROJECT_DIR/mods" ]; then
-        for mod in "$PROJECT_DIR/mods"/*; do
-            if [ -d "$mod" ]; then
-                local mod_name=$(basename "$mod")
-                if [ -z "$mods" ]; then
-                    mods="$mod"
-                else
-                    mods="$mods;$mod"
-                fi
-            fi
-        done
-    fi
-    
+
+     # Extract mod directories from config file
+     local mods=""
+     if [ -f "$CONFIG_FILE" ]; then
+         # Extract modDirs[] array from config
+         while IFS= read -r line; do
+             # Match lines with "mods/@something"
+             if [[ $line =~ \"mods/@[^\"]+\" ]]; then
+                 # Extract the path
+                 local mod_path=$(echo "$line" | sed -n 's/.*"\(mods\/[^"]*\)".*/\1/p')
+                 if [ -n "$mod_path" ]; then
+                     if [ -z "$mods" ]; then
+                         mods="$PROJECT_DIR/$mod_path"
+                     else
+                         mods="$mods;$PROJECT_DIR/$mod_path"
+                     fi
+                 fi
+             fi
+         done < "$CONFIG_FILE"
+     fi
+
     echo "========================================"
     echo "DayZ Server Startup"
     echo "========================================"
@@ -148,44 +234,42 @@ cmd_start() {
         echo "  Mode: Normal (background)"
     fi
     echo ""
-    
+
     echo "[*] Starting DayZ Server..."
-    
+
     cd "$SERVER_DIR"
-    
+
+    echo "" > "$LOG_FILE"
+
     # Build the DayZServer command
     local dayz_cmd="./DayZServer \
         -port=$PORT \
         -config=$CONFIG_FILE \
         -cpuCount=$CPU_CORES"
-    
+
     if [ -n "$mods" ]; then
         echo "[*] Loading mods: $mods"
         dayz_cmd="$dayz_cmd -mod=\"$mods\""
     fi
-    
+
     # Show connection info
     local hostname=$(grep "^hostname" "$CONFIG_FILE" | cut -d'"' -f2)
     echo ""
-    echo "Connection Info:"
-    echo "  Server: $hostname"
-    echo "  Address: $(hostname -I | awk '{print $1}'):$PORT"
-    if [ -f /etc/avahi/services/dayz-server.service ]; then
-        echo "  mDNS: ${hostname// /_}.local:$PORT"
-    else
-        echo "  Note: Run 'cmd/setup-lan-announce' to enable mDNS discovery"
-    fi
-    echo ""
-    
+     echo "Connection Info:"
+     echo "  Server: $hostname"
+     echo "  Address: $(hostname -I | awk '{print $1}'):$PORT"
+     echo ""
+
     # Run in appropriate mode
     if [ "$debug_mode" = true ]; then
         echo "[*] Running in DEBUG mode (foreground)..."
+        echo "[*] Logging to: $LOG_FILE"
         echo "[*] Press Ctrl+C to stop the server"
         echo ""
-        
-        eval $dayz_cmd
-        local exit_code=$?
-        
+
+        eval $dayz_cmd 2>&1 | tee -a "$LOG_FILE"
+        local exit_code=${PIPESTATUS[0]}
+
         echo ""
         echo "[*] Server stopped with exit code: $exit_code"
         rm -f "$PID_FILE"
@@ -193,7 +277,7 @@ cmd_start() {
     else
         # Normal mode - background the process
         echo "[*] Running in normal mode (background)..."
-        
+
         if [ -n "$mods" ]; then
             ./DayZServer \
                 -port=$PORT \
@@ -208,22 +292,22 @@ cmd_start() {
                 -cpuCount=$CPU_CORES \
                 >> "$LOG_FILE" 2>&1 &
         fi
-        
+
         local server_pid=$!
         echo $server_pid > "$PID_FILE"
-        
-        echo "[+] Server started (PID: $server_pid)"
-        echo "[+] Log file: $LOG_FILE"
-        echo ""
-        echo "To monitor the server:"
-        echo "  tail -f $LOG_FILE"
-        echo ""
-        echo "To stop the server:"
-        echo "  $0 stop"
-        echo ""
-        
+
+         echo "[+] Server started (PID: $server_pid)"
+         echo "[+] Log file: $LOG_FILE"
+         echo ""
+         echo "To monitor the server:"
+         echo "  make logs-tail"
+         echo ""
+         echo "To stop the server:"
+         echo "  make stop"
+         echo ""
+
         sleep 2
-        
+
         if kill -0 $server_pid 2>/dev/null; then
             echo "[+] Server is running successfully"
             return 0
@@ -240,44 +324,44 @@ cmd_stop() {
         echo "[!] Server PID file not found. Server may not be running."
         return 1
     fi
-    
+
     local server_pid=$(cat "$PID_FILE")
-    
+
     if ! kill -0 "$server_pid" 2>/dev/null; then
         echo "[!] Server with PID $server_pid is not running"
         rm -f "$PID_FILE"
         return 1
     fi
-    
+
     echo "========================================"
     echo "DayZ Server Shutdown"
     echo "========================================"
     echo ""
     echo "[*] Stopping server (PID: $server_pid)..."
     echo "[*] Waiting for graceful shutdown (30 seconds)..."
-    
+
     kill -SIGTERM "$server_pid" || true
-    
+
     local timeout=30
     while [ $timeout -gt 0 ]; do
         if ! kill -0 "$server_pid" 2>/dev/null; then
             echo "[+] Server stopped gracefully"
             break
         fi
-        
+
         echo -n "."
         sleep 1
         ((timeout--))
     done
-    
+
     echo ""
-    
+
     if kill -0 "$server_pid" 2>/dev/null; then
         echo "[!] Server did not stop gracefully. Force killing..."
         kill -SIGKILL "$server_pid" || true
         sleep 2
     fi
-    
+
     if ! kill -0 "$server_pid" 2>/dev/null; then
         echo "[+] Server stopped"
         rm -f "$PID_FILE" "$STATUS_FILE"
@@ -285,7 +369,7 @@ cmd_stop() {
         echo "[!] Failed to stop server"
         return 1
     fi
-    
+
     echo ""
     echo "========================================"
     echo "Server stopped successfully"
@@ -295,7 +379,7 @@ cmd_stop() {
 
 cmd_update() {
     check_server_exists || return 1
-    
+
     echo "========================================"
     echo "DayZ Server Update Script"
     echo "========================================"
@@ -306,22 +390,22 @@ cmd_update() {
     echo "  3. Update server files via SteamCMD"
     echo "  4. Verify installation"
     echo ""
-    
+
     read -p "Continue? (y/n) " -n 1 -r
     echo
-    
+
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         echo "[*] Update cancelled"
         return 0
     fi
-    
+
     # Create backup
     echo "[*] Creating backup before update..."
     mkdir -p "$BACKUP_DIR"
     local timestamp=$(date +%Y%m%d_%H%M%S)
     local backup_file="$BACKUP_DIR/server_backup_$timestamp.tar.gz"
     echo "[*] Backing up to: $backup_file"
-    
+
     if tar -czf "$backup_file" \
         --exclude='*.tar.gz' \
         -C "$PROJECT_DIR" server/ config/ mods/ 2>/dev/null; then
@@ -330,19 +414,19 @@ cmd_update() {
     else
         echo "[!] Backup creation may have failed"
     fi
-    
+
     # Stop server
     if [ -f "$PID_FILE" ]; then
         echo "[*] Stopping server before update..."
         cmd_stop || true
         sleep 5
     fi
-    
+
     # Update server files
     echo "[*] Updating server files..."
     echo ""
     echo "Checking for DayZ server updates via SteamCMD..."
-    
+
     # Check for SteamCMD
     local steamcmd_cmd=""
     if command -v steamcmd &> /dev/null; then
@@ -355,24 +439,24 @@ cmd_update() {
         echo "[!] SteamCMD not found. Cannot update."
         return 1
     fi
-    
+
     read -p "Enter Steam username: " steam_user
     read -sp "Enter Steam password: " steam_pass
     echo ""
-    
+
     if ! "$steamcmd_cmd" \
         +@NoPromptForPassword 1 \
         +login "$steam_user" "$steam_pass" \
         +force_install_dir "$SERVER_DIR" \
         +app_update 223350 validate \
         +quit; then
-        
+
         echo "[!] Update failed"
         return 1
     fi
-    
+
     echo "[+] Server files updated"
-    
+
     # Verify installation
     echo "[*] Verifying installation..."
     if [ ! -f "$SERVER_DIR/DayZServer" ]; then
@@ -380,48 +464,51 @@ cmd_update() {
         return 1
     fi
     echo "[+] Installation verified"
-    
+
     echo ""
     echo "========================================"
     echo "Update Complete!"
     echo "========================================"
-    echo ""
-    echo "To restart the server:"
-    echo "  $0 start"
-    echo ""
-    echo "Backups are saved in: $BACKUP_DIR"
-    echo ""
-}
+     echo ""
+     echo "To restart the server:"
+     echo "  make restart"
+     echo ""
+     echo "Backups are saved in: $BACKUP_DIR"
+     echo ""
+ }
 
 main() {
     if [ $# -eq 0 ]; then
         print_usage
         return 0
     fi
-    
-    case "$1" in
-        start)
-            shift
-            cmd_start "$@"
-            ;;
-        stop)
-            cmd_stop
-            ;;
-        update)
-            cmd_update
-            ;;
-        status)
-            cmd_status
-            ;;
-        help)
-            print_usage
-            ;;
-        *)
-            echo "[!] Unknown command: $1"
-            print_usage
-            return 1
-            ;;
-    esac
-}
 
-main "$@"
+     case "$1" in
+         start)
+             shift
+             cmd_start "$@"
+             ;;
+         stop)
+             cmd_stop
+             ;;
+         update)
+             cmd_update
+             ;;
+         status)
+             cmd_status
+             ;;
+         query)
+             cmd_query
+             ;;
+         help)
+             print_usage
+             ;;
+         *)
+             echo "[!] Unknown command: $1"
+             print_usage
+             return 1
+             ;;
+     esac
+ }
+
+ main "$@"

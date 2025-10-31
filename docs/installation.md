@@ -7,12 +7,7 @@ Complete guide to installing and managing DayZ servers and mods using this setup
 ### 1. Install Server (Stable)
 
 ```bash
-./scripts/install-server.sh --stable
-```
-
-Or use Makefile:
-```bash
-make install
+./cmd/install
 ```
 
 **What this does:**
@@ -24,39 +19,32 @@ make install
 
 ### 2. Configure Mods
 
-Edit `config/mods.cfg` to add your mods:
+Edit `config/mods.json` to add your mods:
 
-```bash
-declare -A MOD_LIST
-MOD_LIST=(
-    [1559212036]="@cf"
-    [1564026768]="@cot"
-    [2116697624]="@dms"
-)
+```json
+{
+  "mods": [
+    {
+      "id": 1559212036,
+      "name": "@cf",
+      "title": "Community Framework"
+    }
+  ]
+}
 ```
 
-The key is the Steam Workshop ID, the value is the mod folder name.
+Each mod entry requires the Steam Workshop ID, mod folder name, and title.
 
 ### 3. Install Mods
 
 ```bash
-./scripts/install-mods.sh --install
-```
-
-Or:
-```bash
-make install-mods
+./cmd/mods install
 ```
 
 ### 4. Start Server
 
 ```bash
-./scripts/start-server.sh
-```
-
-Or:
-```bash
-make start
+./cmd/server start
 ```
 
 ---
@@ -68,27 +56,23 @@ make start
 For production/stable version:
 
 ```bash
-./scripts/install-server.sh --stable
+./cmd/install
 ```
-
-**Server App ID:** 223350
 
 ### Option B: Experimental Server
 
 For testing/development:
 
 ```bash
-./scripts/install-server.sh --experimental
+./cmd/install --experimental
 ```
-
-**Server App ID:** 1042420
 
 ### Option C: Install with Mods
 
 Install server and mods in one go:
 
 ```bash
-./scripts/install-server.sh --stable --with-mods
+./cmd/install --with-mods
 ```
 
 ---
@@ -98,7 +82,38 @@ Install server and mods in one go:
 ### List Configured Mods
 
 ```bash
-./scripts/install-mods.sh --list
+./cmd/mods list
+```
+
+### Add a Mod
+
+```bash
+./cmd/mods add 1559212036 '@cf'
+```
+
+### Remove a Mod
+
+```bash
+./cmd/mods remove '@cf'
+```
+
+### Install Configured Mods
+
+```bash
+./cmd/mods install
+```
+
+This will:
+1. Prompt for Steam credentials
+2. Download mods via SteamCMD from Steam Workshop
+3. Copy mods to `mods/` directory
+4. Convert filenames to lowercase (compatibility)
+5. Extract signing keys to `keys/` directory
+
+### Update All Mods
+
+```bash
+./cmd/mods update
 ```
 
 Output:
@@ -162,23 +177,21 @@ This will:
 
 ```
 dayz-server/
+├── cmd/
+│   ├── install              # Install DayZ server
+│   ├── mods                 # Manage mods
+│   └── server               # Control server
 ├── config/
 │   ├── serverDZ.cfg         # Main server config
 │   ├── mission.xml          # Mission configuration
 │   ├── types.xml            # Item definitions
 │   └── mods.cfg             # Mod configuration
-├── scripts/
-│   ├── install-server.sh    # Install DayZ server
-│   ├── install-mods.sh      # Manage mods
-│   ├── start-server.sh      # Start server
-│   ├── stop-server.sh       # Stop server
-│   └── update-server.sh     # Update server
 ├── server/                  # DayZ server installation
 ├── mods/                    # Installed mods
 ├── keys/                    # Mod signing keys
 ├── logs/                    # Server logs
-├── Makefile                 # Task automation
-└── README.md                # Documentation
+├── docs/                    # Documentation
+└── README.md                # Quick start guide
 ```
 
 ---
@@ -227,41 +240,32 @@ modDirs[] = {
 ### Start Server
 
 ```bash
-./scripts/start-server.sh
-# OR
-make start
+./cmd/server start
 ```
 
 ### Monitor Logs
 
 ```bash
-# View last 100 lines
-make logs
-
 # Follow in real-time
-make logs-tail
+./cmd/server logs-tail
 ```
 
 ### Stop Server
 
 ```bash
-./scripts/stop-server.sh
-# OR
-make stop
+./cmd/server stop
 ```
 
 ### Restart Server
 
 ```bash
-make restart
+./cmd/server restart
 ```
 
 ### Update Server Files
 
 ```bash
-./scripts/update-server.sh
-# OR
-make update
+./cmd/server update
 ```
 
 ---
@@ -291,17 +295,16 @@ export STEAMCMD_PASSWORD="your_password"
 
 ### Mods Not Loading
 
-1. Check `mods/` directory exists with mod folders
+1. Check `mods/` directory exists with mod folders: `./cmd/mods list`
 2. Verify mod names in `config/serverDZ.cfg` match folder names
 3. Check mod signing keys in `keys/` directory
-4. Review server logs for errors
+4. Review server logs: `./cmd/server logs-tail`
 
 ### Server Won't Start
 
 1. Check server files installed: `ls server/DayZServer`
 2. Verify permissions: `ls -la server/`
-3. Check config syntax: `cat server/serverDZ.cfg`
-4. Review logs: `tail -f logs/server.log`
+3. Review logs: `./cmd/server logs-tail`
 
 ### Mod Download Failed
 
@@ -332,18 +335,13 @@ cp config/mods.cfg config/mods-experimental.cfg
 
 ```bash
 #!/bin/bash
-cd ~/dayz-llm-ai
+cd ~/dayz-server
 
 # Install stable server with mods
-STEAMCMD_USERNAME=user STEAMCMD_PASSWORD=pass \
-  ./scripts/install-server.sh --stable
-
-# Install configured mods
-STEAMCMD_USERNAME=user STEAMCMD_PASSWORD=pass \
-  ./scripts/install-mods.sh --install
+./cmd/install --with-mods
 
 # Start server
-./scripts/start-server.sh
+./cmd/server start
 ```
 
 ### Backup Mods
@@ -362,7 +360,7 @@ tar -xzf backups/mods-backup.tar.gz
 
 ## Performance Tips
 
-- Monitor mods: `make logs-tail`
+- Monitor mods: `./cmd/server logs-tail`
 - Check memory: `ps aux | grep DayZServer`
 - Limit mods to essentials only
 - Use systemd service for auto-restart
@@ -373,16 +371,16 @@ tar -xzf backups/mods-backup.tar.gz
 
 | Task | Command |
 |------|---------|
-| Install stable server | `make install` |
-| Install experimental | `make install-experimental` |
-| List mods | `make list-mods` |
-| Add mod | `make add-mod ID=123 NAME=@mod` |
-| Install mods | `make install-mods` |
-| Update mods | `make update-mods` |
-| Start server | `make start` |
-| Stop server | `make stop` |
-| View logs | `make logs-tail` |
-| Update server | `make update` |
+| Install stable server | `./cmd/install` |
+| Install experimental | `./cmd/install --experimental` |
+| List mods | `./cmd/mods list` |
+| Add mod | `./cmd/mods add ID @name` |
+| Install mods | `./cmd/mods install` |
+| Update mods | `./cmd/mods update` |
+| Start server | `./cmd/server start` |
+| Stop server | `./cmd/server stop` |
+| View logs | `./cmd/server logs-tail` |
+| Update server | `./cmd/server update` |
 
 ---
 

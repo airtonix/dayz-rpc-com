@@ -1,28 +1,53 @@
 #!/bin/bash
+# vim: set filetype=bash:
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 SERVER_DIR="$PROJECT_DIR/server"
+CONFIG_FILE="$PROJECT_DIR/config/mods.json"
 WORKSHOP_ID=221100
 
 STEAMCMD_CMD=""
+
+TEMPLATE_USAGE="""
+DayZ Mod Manager
+
+Usage: $0 [COMMAND] [ARGS]
+
+Commands:
+    list                            - List configured mods
+    search QUERY                    - Search for mods (fuzzy match)
+    add ID NAME                     - Add a mod to config
+    remove NAME                     - Remove a mod from config
+    install                         - Install all configured mods
+    update                          - Update all installed mods
+    help                            - Show this help message
+
+Examples:
+    $0 list
+    $0 search expansion
+    $0 add 1559212036 '@cf'
+    $0 install
+    $0 update
+
+"""
 
 get_steamcmd() {
     if command -v steamcmd &> /dev/null; then
         STEAMCMD_CMD="steamcmd"
         return 0
     fi
-    
+
     if [ -f "$HOME/.local/share/steamcmd/steamcmd.sh" ]; then
         STEAMCMD_CMD="$HOME/.local/share/steamcmd/steamcmd.sh"
         return 0
     fi
-    
+
     if [ -f "$HOME/.steam/steamcmd/steamcmd.sh" ]; then
         STEAMCMD_CMD="$HOME/.steam/steamcmd/steamcmd.sh"
         return 0
     fi
-    
+
     return 1
 }
 
@@ -35,289 +60,365 @@ run_steamcmd() {
     return $?
 }
 
+check_jq() {
+    if ! command -v jq &> /dev/null; then
+        echo "[!] Error: jq is required but not installed"
+        echo "[*] Install it with: sudo apt-get install jq"
+        exit 1
+    fi
+}
+
+check_curl() {
+    if ! command -v curl &> /dev/null; then
+        echo "[!] Error: curl is required but not installed"
+        echo "[*] Install it with: sudo apt-get install curl"
+        exit 1
+    fi
+}
+
+
+
 print_usage() {
-    cat << EOF
-DayZ Mod Installer
-
-Usage: $0 [OPTIONS]
-
-Options:
-    --list              List configured mods
-    --add ID NAME       Add a mod to config
-    --remove NAME       Remove a mod from config
-    --install           Install all configured mods
-    --update            Update all installed mods
-    --help              Show this help message
-
-Examples:
-    $0 --list
-    $0 --add 1559212036 '@cf'
-    $0 --install
-    $0 --update
-
-EOF
+    echo "$TEMPLATE_USAGE"
 }
 
 check_server_exists() {
     if [ ! -f "$SERVER_DIR/DayZServer" ]; then
         echo "[!] Error: DayZ Server not installed at $SERVER_DIR"
-        echo "[*] Run: $SCRIPT_DIR/install-server.sh"
+        echo "[*] Run: $SCRIPT_DIR/install"
         exit 1
     fi
 }
 
-load_mod_config() {
-    if [ ! -f "$PROJECT_DIR/config/mods.cfg" ]; then
-        echo "[!] No mods.cfg found at $PROJECT_DIR/config/mods.cfg"
+check_config_exists() {
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo "[!] No mods.json found at $CONFIG_FILE"
         echo "[*] Creating template..."
         create_mod_config
         return 1
     fi
-    
-    source "$PROJECT_DIR/config/mods.cfg"
     return 0
 }
 
 create_mod_config() {
-    cat > "$PROJECT_DIR/config/mods.cfg" << 'EOF'
-#!/bin/bash
+    local config_object
 
-declare -A MOD_LIST
-MOD_LIST=(
-    [1559212036]="@cf"
-    [1564026768]="@cot"
-)
+    jq -n '{mods: []}' > "$CONFIG_FILE" 2>/dev/null
 
-export MOD_LIST
-EOF
-    echo "[+] Created $PROJECT_DIR/config/mods.cfg"
-    echo "[*] Edit this file to configure your mods"
+    echo "[+] Created $CONFIG_FILE"
+    echo "[*] Edit this file to add or remove mods as needed"
 }
 
 list_mods() {
+    check_config_exists || return 0
+
     echo "========================================"
     echo "Configured Mods"
     echo "========================================"
     echo ""
-    
-    if [ ! -f "$PROJECT_DIR/config/mods.cfg" ]; then
-        echo "[!] No mods.cfg found at $PROJECT_DIR/config/mods.cfg"
-        return 0
-    fi
-    
-    source "$PROJECT_DIR/config/mods.cfg" || true
-    
-    if [ ${#MOD_LIST[@]} -eq 0 ]; then
+
+    local mod_count=$(jq '.mods | length' "$CONFIG_FILE")
+
+    if [ "$mod_count" -eq 0 ]; then
         echo "[*] No mods configured"
         return 0
     fi
-    
-    local count=1
-    for mod_id in "${!MOD_LIST[@]}"; do
-        local mod_name="${MOD_LIST[$mod_id]}"
-        echo "$count. $mod_name (ID: $mod_id)"
-        
+
+    jq -r '.mods | to_entries | .[] | "\(.key + 1). \(.value.name) (ID: \(.value.id))"' "$CONFIG_FILE" | while read line; do
+        echo "$line"
+        mod_name=$(echo "$line" | grep -oP '@\S+')
         if [ -d "$PROJECT_DIR/mods/$mod_name" ]; then
             local size=$(du -sh "$PROJECT_DIR/mods/$mod_name" 2>/dev/null | cut -f1)
             echo "   Status: [INSTALLED] ($size)"
         else
             echo "   Status: [NOT INSTALLED]"
         fi
-        
-        ((count++))
     done
-    
+
     echo ""
-    echo "Total: ${#MOD_LIST[@]} mod(s)"
+    echo "Total: $mod_count mod(s)"
 }
+
+search_mods() {
+    local query="$@"
+
+    if [ -z "$query" ]; then
+        echo "[!] Usage: $0 search QUERY"
+        echo "[!] Example: $0 search expansion"
+        exit 1
+    fi
+
+    check_curl
+    check_jq
+
+    echo "Searching: $query"
+    echo "[*] Querying Steam Workshop..."
+    echo ""
+
+    local search_url="https://steamcommunity.com/workshop/browse/?appid=$WORKSHOP_ID&searchtext=$(echo "$query" | sed 's/ /%20/g')&numperpage=30"
+
+    local html=$(curl -s -A "Mozilla/5.0" "$search_url" 2>/dev/null)
+
+    if [ -z "$html" ]; then
+        echo "[!] Failed to fetch search results"
+        echo "[*] Visit Steam Workshop: $search_url"
+        return 1
+    fi
+
+    local mod_ids=$(echo "$html" | grep -oP '/sharedfiles/filedetails/\?id=\K\d+' | head -10)
+
+    if [ -z "$mod_ids" ]; then
+        echo "[*] No mods found for '$query'"
+        echo ""
+        echo "Visit Steam Workshop:"
+        echo "  $search_url"
+        echo ""
+        return 0
+    fi
+
+    local api_url="https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/"
+    local post_data="itemcount=$(echo "$mod_ids" | wc -l)"
+    local index=0
+
+    for mod_id in $mod_ids; do
+        post_data="$post_data&publishedfileids[$index]=$mod_id"
+        ((index++))
+    done
+
+    local response=$(curl -s -X POST -d "$post_data" "$api_url" 2>/dev/null)
+
+    if [ -z "$response" ]; then
+        echo "[!] Failed to fetch mod details from API"
+        return 1
+    fi
+
+    local mod_count=$(echo "$response" | jq '.response.publishedfiledetails | length' 2>/dev/null)
+
+    if [ -z "$mod_count" ] || [ "$mod_count" -eq 0 ]; then
+        echo "[*] No mod details available"
+        return 0
+    fi
+
+    local response_file=$(mktemp)
+    echo "$response" > "$response_file"
+
+    search_mods_simple "$response_file"
+
+    rm -f "$response_file"
+}
+
+search_mods_simple() {
+    local response_file=$1
+
+    echo "Found mods:"
+    echo ""
+
+    local index=1
+    cat "$response_file" | jq -r '.response.publishedfiledetails[] |
+        select(.result == 1 and .publishedfileid != null and .publishedfileid != "") |
+        .title as $title |
+        .publishedfileid as $id |
+        .subscriptions as $subs |
+        "TITLE:\($title|gsub("-"; " ")|gsub("  "; " "))|ID:\($id)|SUBS:\($subs)"' 2>/dev/null | \
+    awk '!seen[$0]++' | \
+    while IFS='|' read -r title_part id_part subs_part; do
+        local title=$(echo "$title_part" | sed 's/^TITLE://')
+        local mod_id=$(echo "$id_part" | sed 's/^ID://')
+        local subs=$(echo "$subs_part" | sed 's/^SUBS://')
+
+        if [ -n "$title" ] && [ -n "$mod_id" ]; then
+            if [ ${#title} -gt 45 ]; then
+                title="${title:0:42}..."
+            fi
+
+            echo "$index. $title"
+            echo "   ID: $mod_id"
+            echo "   Subscribers: $subs"
+            echo "   Add: ./cmd/mods add $mod_id @modname"
+            echo ""
+
+            ((index++))
+        fi
+    done
+}
+
+
 
 add_mod() {
     local mod_id=$1
     local mod_name=$2
-    
+
     if [ -z "$mod_id" ] || [ -z "$mod_name" ]; then
-        echo "[!] Usage: $0 --add MOD_ID MOD_NAME"
-        echo "[!] Example: $0 --add 1559212036 '@cf'"
+        echo "[!] Usage: $0 add MOD_ID MOD_NAME"
+        echo "[!] Example: $0 add 1559212036 '@cf'"
         exit 1
     fi
-    
-    if [ ! -f "$PROJECT_DIR/config/mods.cfg" ]; then
-        create_mod_config
-    fi
-    
-    if grep -q "\[$mod_id\]=" "$PROJECT_DIR/config/mods.cfg"; then
+
+    check_config_exists || return 0
+
+    if jq --arg id "$mod_id" '.mods[] | select(.id == ($id | tonumber))' "$CONFIG_FILE" | grep -q .; then
         echo "[!] Mod ID $mod_id already exists"
         exit 1
     fi
-    
+
     local temp_file=$(mktemp)
-    head -n -3 "$PROJECT_DIR/config/mods.cfg" > "$temp_file"
-    
-    echo "    [$mod_id]=\"$mod_name\"" >> "$temp_file"
-    echo ")" >> "$temp_file"
-    echo "" >> "$temp_file"
-    echo "export MOD_LIST" >> "$temp_file"
-    
-    cat "$temp_file" > "$PROJECT_DIR/config/mods.cfg"
-    rm "$temp_file"
-    
+    jq --arg id "$mod_id" --arg name "$mod_name" \
+        '.mods += [{"id": ($id | tonumber), "name": $name, "title": $name}]' \
+        "$CONFIG_FILE" > "$temp_file"
+
+    mv "$temp_file" "$CONFIG_FILE"
+
     echo "[+] Added mod: $mod_name (ID: $mod_id)"
 }
 
 remove_mod() {
     local mod_name=$1
-    
+
     if [ -z "$mod_name" ]; then
-        echo "[!] Usage: $0 --remove MOD_NAME"
+        echo "[!] Usage: $0 remove MOD_NAME"
         exit 1
     fi
-    
-    if [ ! -f "$PROJECT_DIR/config/mods.cfg" ]; then
-        echo "[!] No mods.cfg found"
-        exit 1
-    fi
-    
-    if ! grep -q "\"$mod_name\"" "$PROJECT_DIR/config/mods.cfg"; then
+
+    check_config_exists || return 0
+
+    if ! jq --arg name "$mod_name" '.mods[] | select(.name == $name)' "$CONFIG_FILE" | grep -q .; then
         echo "[!] Mod not found: $mod_name"
         exit 1
     fi
-    
+
     local temp_file=$(mktemp)
-    grep -v "\"$mod_name\"" "$PROJECT_DIR/config/mods.cfg" > "$temp_file"
-    
-    cat "$temp_file" > "$PROJECT_DIR/config/mods.cfg"
-    rm "$temp_file"
-    
+    jq --arg name "$mod_name" \
+        '.mods |= map(select(.name != $name))' \
+        "$CONFIG_FILE" > "$temp_file"
+
+    mv "$temp_file" "$CONFIG_FILE"
+
     echo "[+] Removed mod: $mod_name"
 }
 
 install_mods() {
+    check_jq
     check_server_exists
-    
-    if ! load_mod_config; then
-        echo "[*] No mods to install"
-        return 0
-    fi
-    
-    if [ ${#MOD_LIST[@]} -eq 0 ]; then
+    check_config_exists || return 0
+
+    local mod_count=$(jq '.mods | length' "$CONFIG_FILE")
+
+    if [ "$mod_count" -eq 0 ]; then
         echo "[*] No mods configured"
         return 0
     fi
-    
-    echo "[*] Installing ${#MOD_LIST[@]} mod(s)..."
+
+    echo "[*] Installing $mod_count mod(s)..."
     echo ""
-    
+
     read -p "Enter Steam username: " steam_user
     read -sp "Enter Steam password: " steam_pass
     echo ""
-    
+
     local steamcmd_args=(
         "+@NoPromptForPassword 1"
-        "+login $steam_user $steam_pass"
         "+force_install_dir $SERVER_DIR"
+        "+login $steam_user $steam_pass"
     )
-    
-    for mod_id in "${!MOD_LIST[@]}"; do
+
+    while IFS=' ' read -r mod_id mod_name; do
         steamcmd_args+=("+workshop_download_item $WORKSHOP_ID $mod_id validate")
-        echo "[*] Downloading: ${MOD_LIST[$mod_id]} (ID: $mod_id)"
-    done
-    
+        echo "[*] Downloading: $mod_name (ID: $mod_id)"
+    done < <(jq -r '.mods[] | "\(.id) \(.name)"' "$CONFIG_FILE")
+
     steamcmd_args+=("+quit")
-    
+
     echo ""
-    
+
     if ! get_steamcmd; then
         echo "[!] SteamCMD not found"
         return 1
     fi
-    
+
     if ! run_steamcmd "${steamcmd_args[@]}"; then
         echo "[!] Failed to download mods"
         return 1
     fi
-    
+
     process_mods
 }
 
 update_mods() {
+    check_jq
     check_server_exists
-    
-    if ! load_mod_config; then
-        return 0
-    fi
-    
-    if [ ${#MOD_LIST[@]} -eq 0 ]; then
+    check_config_exists || return 0
+
+    local mod_count=$(jq '.mods | length' "$CONFIG_FILE")
+
+    if [ "$mod_count" -eq 0 ]; then
         echo "[*] No mods to update"
         return 0
     fi
-    
-    echo "[*] Updating ${#MOD_LIST[@]} mod(s)..."
+
+    echo "[*] Updating $mod_count mod(s)..."
     echo ""
-    
+
     read -p "Enter Steam username: " steam_user
     read -sp "Enter Steam password: " steam_pass
     echo ""
-    
+
     local steamcmd_args=(
         "+@NoPromptForPassword 1"
-        "+login $steam_user $steam_pass"
         "+force_install_dir $SERVER_DIR"
+        "+login $steam_user $steam_pass"
     )
-    
-    for mod_id in "${!MOD_LIST[@]}"; do
+
+    while IFS= read -r mod_id; do
         steamcmd_args+=("+workshop_download_item $WORKSHOP_ID $mod_id validate")
-    done
-    
+    done < <(jq -r '.mods[] | .id' "$CONFIG_FILE")
+
     steamcmd_args+=("+quit")
-    
+
     if ! get_steamcmd; then
         echo "[!] SteamCMD not found"
         return 1
     fi
-    
+
     if ! run_steamcmd "${steamcmd_args[@]}"; then
         echo "[!] Failed to update mods"
         return 1
     fi
-    
+
     process_mods
 }
 
 process_mods() {
     echo ""
     echo "[*] Processing mods..."
-    
+
     local mod_count=0
-    
-    source "$PROJECT_DIR/config/mods.cfg"
-    
-    for mod_id in "${!MOD_LIST[@]}"; do
-        local mod_name="${MOD_LIST[$mod_id]}"
+
+    while IFS=' ' read -r mod_id mod_name; do
         local mod_source="$SERVER_DIR/steamapps/workshop/content/$WORKSHOP_ID/$mod_id"
         local mod_target="$PROJECT_DIR/mods/$mod_name"
-        
+
         if [ ! -d "$mod_source" ]; then
             echo "[!] Mod source not found: $mod_source"
             continue
         fi
-        
+
         echo "[*] Processing $mod_name..."
-        
+
         rm -rf "$mod_target"
         mkdir -p "$mod_target"
         cp -r "$mod_source"/* "$mod_target/" 2>/dev/null || true
-        
+
         find "$mod_target" -depth -execdir bash -c 'mv "$0" "${0,,}"' {} \; 2>/dev/null || true
-        
+
         if find "$mod_target" -name "*.bikey" | grep -q .; then
             mkdir -p "$PROJECT_DIR/keys"
             find "$mod_target" -name "*.bikey" -exec cp {} "$PROJECT_DIR/keys/" \;
             echo "    [+] Copied signing keys"
         fi
-        
+
         ((mod_count++))
-    done
-    
+    done < <(jq -r '.mods[] | "\(.id) \(.name)"' "$CONFIG_FILE")
+
     echo "[+] Processed $mod_count mod(s)"
     echo ""
     echo "Mods are ready in: $PROJECT_DIR/mods"
@@ -328,28 +429,31 @@ main() {
         print_usage
         exit 0
     fi
-    
+
     case "$1" in
-        --list)
+        list)
             list_mods
             ;;
-        --add)
+        search)
+            search_mods "${@:2}"
+            ;;
+        add)
             add_mod "$2" "$3"
             ;;
-        --remove)
+        remove)
             remove_mod "$2"
             ;;
-        --install)
+        install)
             install_mods
             ;;
-        --update)
+        update)
             update_mods
             ;;
-        --help)
+        help|--help|-h)
             print_usage
             ;;
         *)
-            echo "[!] Unknown option: $1"
+            echo "[!] Unknown command: $1"
             print_usage
             exit 1
             ;;

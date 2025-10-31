@@ -39,11 +39,11 @@ Automatically gathering mod keys is smart.
 
 ## What We Enhanced
 
-### 1. **Separated Concerns**
-Your `manage.sh` does everything. We split it:
-- **install-server.sh**: Server installation only
-- **install-mods.sh**: Mod management only
-- **start-server.sh**: Server lifecycle
+### 1. **Organized Command Tools**
+Your `manage.sh` does everything. We organized it into:
+- **cmd/install**: Server installation only
+- **cmd/mods**: Mod management only
+- **cmd/server**: Server lifecycle
 
 **Benefits:**
 - Easier to test each component
@@ -55,9 +55,9 @@ Added commands to manage mods without editing config files:
 
 ```bash
 # Instead of editing mods.cfg manually:
-./scripts/install-mods.sh --add 1559212036 '@cf'
-./scripts/install-mods.sh --remove '@cf'
-./scripts/install-mods.sh --list
+./cmd/mods add 1559212036 '@cf'
+./cmd/mods remove '@cf'
+./cmd/mods list
 ```
 
 ### 3. **Configuration Templates**
@@ -66,15 +66,15 @@ Provided detailed configuration files with documentation:
 - `config/mission.xml` - Mission parameters
 - `config/types.xml` - Item definitions
 
-### 4. **Makefile Automation**
+### 4. **Direct Script Invocation**
 Made common tasks accessible:
 ```bash
-make install
-make list-mods
-make add-mod ID=123 NAME=@cf
-make install-mods
-make start
-make logs-tail
+./cmd/install
+./cmd/mods list
+./cmd/mods add ID @cf
+./cmd/mods install
+./cmd/server start
+./cmd/server logs-tail
 ```
 
 ### 5. **Documentation**
@@ -145,10 +145,10 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 4. Script processes all mods at once
 
 **Our Approach:**
-1. Run `make list-mods` (see current config)
-2. Run `make add-mod ID=123 NAME=@cf` (add mods)
-3. Run `make install-mods` (install all)
-4. Or `make update-mods` (update only)
+1. Run `./cmd/mods list` (see current config)
+2. Run `./cmd/mods add 123 @cf` (add mods)
+3. Run `./cmd/mods install` (install all)
+4. Or `./cmd/mods update` (update only)
 
 **Tradeoff:** 
 - Your way: Faster for initial setup
@@ -164,9 +164,7 @@ cd servers/stable-one
 
 **Our Approach:**
 ```bash
-make start
-# OR
-./scripts/start-server.sh
+./cmd/server start
 
 # Launch args from config/serverDZ.cfg
 ```
@@ -209,7 +207,7 @@ Both systems teach different approaches:
 
 **For Hybrid Approach:**
 You could combine both:
-1. Use our install-server.sh for setup
+1. Use our cmd/install for setup
 2. Use your manage.sh for custom start/stop logic
 3. Use our config files for detailed parameters
 
