@@ -15,6 +15,7 @@ DayZ Mod Manager
 Usage: $0 [COMMAND] [ARGS]
 
 Commands:
+    new NAME                        - Scaffold a new local mod from template
     list                            - List configured mods
     search QUERY                    - Search for mods (fuzzy match)
     add ID NAME                     - Add a mod to config
@@ -24,6 +25,7 @@ Commands:
     help                            - Show this help message
 
 Examples:
+    $0 new mymod
     $0 list
     $0 search expansion
     $0 add 1559212036 '@cf'
@@ -424,6 +426,52 @@ process_mods() {
     echo "Mods are ready in: $PROJECT_DIR/mods"
 }
 
+new_mod() {
+    local mod_name=$1
+
+    if [ -z "$mod_name" ]; then
+        echo "[!] Usage: $0 new MOD_NAME"
+        echo "[!] Example: $0 new mymod"
+        exit 1
+    fi
+
+    local template_dir="$PROJECT_DIR/tmpl/new-mod"
+    local mod_dir="$PROJECT_DIR/pkgs/$mod_name"
+    local mod_name_formatted="@$mod_name"
+
+    if [ ! -d "$template_dir" ]; then
+        echo "[!] Error: Template directory not found at $template_dir"
+        exit 1
+    fi
+
+    if [ -d "$mod_dir" ]; then
+        echo "[!] Error: Mod already exists at $mod_dir"
+        exit 1
+    fi
+
+    echo "[*] Creating new mod: $mod_name"
+
+    cp -r "$template_dir" "$mod_dir"
+
+    find "$mod_dir" -type f -name "*.cpp" -o -name "*.md" | while read file; do
+        sed -i "s|{{MOD_NAME}}|$mod_name|g" "$file"
+        sed -i "s|{{MOD_DIR}}|$mod_name|g" "$file"
+    done
+
+    mkdir -p "$PROJECT_DIR/mods"
+    ln -sf "../pkgs/$mod_name" "$PROJECT_DIR/mods/$mod_name_formatted"
+
+    echo "[+] Created mod: $mod_name"
+    echo "[+] Location: $mod_dir"
+    echo "[+] Symlink: $PROJECT_DIR/mods/$mod_name_formatted"
+    echo ""
+    echo "Next steps:"
+    echo "  1. Read the modding guide: docs/modding.md"
+    echo "  2. Edit $mod_dir/mod.cpp"
+    echo "  3. Add scripts to $mod_dir/scripts/"
+    echo "  4. Configure as needed in $mod_dir/config/"
+}
+
 main() {
     if [ $# -eq 0 ]; then
         print_usage
@@ -431,6 +479,9 @@ main() {
     fi
 
     case "$1" in
+        new)
+            new_mod "$2"
+            ;;
         list)
             list_mods
             ;;
