@@ -16,6 +16,7 @@ Usage: $0 [COMMAND] [ARGS]
 
 Commands:
     new NAME                        - Scaffold a new local mod from template
+    workbench NAME                  - Launch Workbench for a local mod
     list                            - List configured mods
     search QUERY                    - Search for mods (fuzzy match)
     add ID NAME                     - Add a mod to config
@@ -26,6 +27,7 @@ Commands:
 
 Examples:
     $0 new mymod
+    $0 workbench mymod
     $0 list
     $0 search expansion
     $0 add 1559212036 '@cf'
@@ -427,48 +429,123 @@ process_mods() {
 }
 
 new_mod() {
+    local mod_name
+    local mod_prefix
+    local mod_dir
+    local mod_name_formatted
+    local template_token
+
+    mod_name=$1
+    template_token="ModTemplate"
+
+    if [ -z "$mod_name" ]; then
+        echo "[!] Usage: $0 new MOD_NAME"
+        echo "[!] Example: $0 new mymod"
+        exit 1
+    fi
+
+
+    mod_dir="$PROJECT_DIR/pkgs/$mod_name"
+
+    if [ -d "$mod_dir" ]; then
+        echo "[!] Error: Mod already exists at $mod_dir"
+        exit 1
+    fi
+
+    echo "[*] Creating new mod: $mod_name"
+
+    if ! git clone --depth 1 https://github.com/InclementDab/DayZ-Mod-Template.git "$mod_dir"; then
+        echo "[!] Error: Failed to clone template repository"
+        exit 1
+    fi
+
+    rm "$mod_dir/Init.ps1" "$mod_dir/.git" "$mod_dir/SetupWorkdrive.bat" "$mod_dir/LaunchWorkbench.bat"
+
+
+    mod_prefix="${mod_name//[[:space:]]/}"
+    if [ -z "$mod_prefix" ]; then
+        mod_prefix="ModName"
+    fi
+    mod_name_formatted="@$mod_prefix"
+
+    echo "[*] Creating script folders..."
+
+    mkdir -p "$mod_dir/$template_token/Scripts/1_Core/$mod_prefix"
+    mkdir -p "$mod_dir/$template_token/Scripts/3_Game/$mod_prefix"
+    mkdir -p "$mod_dir/$template_token/Scripts/4_World/$mod_prefix"
+    mkdir -p "$mod_dir/$template_token/Scripts/5_Mission/$mod_prefix"
+
+    echo "[*] Adding guides..."
+    echo "# Core" > "$mod_dir/$template_token/Scripts/1_Core/$mod_prefix/README.md"
+    echo "# Game" > "$mod_dir/$template_token/Scripts/3_Game/$mod_prefix/README.md"
+    echo "# World" > "$mod_dir/$template_token/Scripts/4_World/$mod_prefix/README.md"
+    echo "# Mission" > "$mod_dir/$template_token/Scripts/5_Mission/$mod_prefix/README.md"
+
+    mkdir -p "$mod_dir/Addons"
+    mkdir -p "$mod_dir/Missions/Global"
+    mkdir -p "$mod_dir/Profiles/Dev"
+    mkdir -p "$mod_dir/Profiles/Global"
+
+    echo "[*] Renaming ModTemplate folders..."
+    find "$mod_dir" -type d -name "*$template_token*" | while read dir; do
+        if [ "$template_token" != "$mod_prefix" ]; then
+            new_dir="${dir//$template_token/$mod_prefix}"
+            if [ "$dir" != "$new_dir" ]; then
+                mv "$dir" "$new_dir"
+            fi
+        fi
+    done
+
+    echo "[*] Replacing tokens in files..."
+
+    find "$mod_dir" -type f \( -name "*.cpp" -o -name "*.c" -o -name "*.gproj" -o -name "*.cfg" \) | while read file; do
+        sed -i "s/$template_token/$mod_prefix/g" "$file"
+    done
+
+    echo "[+] Initialization complete!"
+
+    mkdir -p "$PROJECT_DIR/mods"
+    ln -sf "../pkgs/$mod_name" "$PROJECT_DIR/mods/$mod_name_formatted"
+
+    echo "[+] Created mod: $mod_name"
+    echo "[+] Location: $mod_dir"
+    echo "[+] Symlink: $PROJECT_DIR/mods/$mod_name_formatted"
+    echo ""
+    echo "Next steps:"
+    echo "  1. Read the modding guide: docs/modding.md"
+    echo "  2. Edit $mod_dir/mod.cpp"
+    echo "  3. Add scripts to $mod_dir/Scripts/"
+    echo "  4. Configure as needed in $mod_dir/config/"
+  }
+
+launch_workbench() {
      local mod_name=$1
 
      if [ -z "$mod_name" ]; then
-         echo "[!] Usage: $0 new MOD_NAME"
-         echo "[!] Example: $0 new mymod"
+         echo "[!] Usage: $0 workbench MOD_NAME"
+         echo "[!] Example: $0 workbench mymod"
          exit 1
      fi
 
      local mod_dir="$PROJECT_DIR/pkgs/$mod_name"
-     local mod_name_formatted="@$mod_name"
 
-     if [ -d "$mod_dir" ]; then
-         echo "[!] Error: Mod already exists at $mod_dir"
+     if [ ! -d "$mod_dir" ]; then
+         echo "[!] Error: Mod not found at $mod_dir"
          exit 1
      fi
 
-     echo "[*] Creating new mod: $mod_name"
-
-     if ! git clone --depth 1 https://github.com/InclementDab/DayZ-Mod-Template.git "$mod_dir"; then
-         echo "[!] Error: Failed to clone template repository"
-         exit 1
+     if ! get_steamcmd; then
+         echo "[!] SteamCMD not found"
+         return 1
      fi
 
-     rm -rf "$mod_dir/.git"
+     local dayz_tools_appid="1559212036"
+     local profiles_dir="$PROJECT_DIR/profiles"
+     mkdir -p "$profiles_dir"
 
-     find "$mod_dir" -type f \( -name "*.cpp" -o -name "*.md" \) | while read file; do
-         sed -i "s|{{MOD_NAME}}|$mod_name|g" "$file"
-         sed -i "s|{{MOD_DIR}}|$mod_name|g" "$file"
-     done
+     echo "[*] Launching Workbench for mod: $mod_name"
 
-     mkdir -p "$PROJECT_DIR/mods"
-     ln -sf "../pkgs/$mod_name" "$PROJECT_DIR/mods/$mod_name_formatted"
-
-     echo "[+] Created mod: $mod_name"
-     echo "[+] Location: $mod_dir"
-     echo "[+] Symlink: $PROJECT_DIR/mods/$mod_name_formatted"
-     echo ""
-     echo "Next steps:"
-     echo "  1. Read the modding guide: docs/modding.md"
-     echo "  2. Edit $mod_dir/mod.cpp"
-     echo "  3. Add scripts to $mod_dir/scripts/"
-     echo "  4. Configure as needed in $mod_dir/config/"
+     "$STEAMCMD_CMD" +@NoPromptForPassword 1 +run_app_build_app "$dayz_tools_appid" -doLogs -profiles="$profiles_dir" -repository="$mod_dir" +quit
  }
 
 main() {
@@ -477,37 +554,40 @@ main() {
         exit 0
     fi
 
-    case "$1" in
-        new)
-            new_mod "$2"
-            ;;
-        list)
-            list_mods
-            ;;
-        search)
-            search_mods "${@:2}"
-            ;;
-        add)
-            add_mod "$2" "$3"
-            ;;
-        remove)
-            remove_mod "$2"
-            ;;
-        install)
-            install_mods
-            ;;
-        update)
-            update_mods
-            ;;
-        help|--help|-h)
-            print_usage
-            ;;
-        *)
-            echo "[!] Unknown command: $1"
-            print_usage
-            exit 1
-            ;;
-    esac
+     case "$1" in
+         new)
+             new_mod "$2"
+             ;;
+         workbench)
+             launch_workbench "$2"
+             ;;
+         list)
+             list_mods
+             ;;
+         search)
+             search_mods "${@:2}"
+             ;;
+         add)
+             add_mod "$2" "$3"
+             ;;
+         remove)
+             remove_mod "$2"
+             ;;
+         install)
+             install_mods
+             ;;
+         update)
+             update_mods
+             ;;
+         help|--help|-h)
+             print_usage
+             ;;
+         *)
+             echo "[!] Unknown command: $1"
+             print_usage
+             exit 1
+             ;;
+     esac
 }
 
 main "$@"
