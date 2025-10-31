@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- DayZ Item Types Configuration
+     This file defines custom item types for your server
+     Modify this file to add new items or change existing ones
+-->
+
+<types>
+    <!-- ================================================================== -->
+    <!-- EXAMPLE CUSTOM WEAPON -->
+    <!-- ================================================================== -->
+    
+    <type name="CustomRifle">
+        <category name="weapon" />
+        <category name="firearm" />
+        <category name="rifle" />
+        
+        <name>Custom Military Rifle</name>
+        
+        <!-- Inventory properties -->
+        <value name="inventorySlots">8</value>
+        <value name="weight">3500</value>
+        <value name="absorbency">0</value>
+        
+        <!-- Gameplay properties -->
+        <value name="hungerBonus">0</value>
+        <value name="healthBonus">0</value>
+        <value name="bloodBonus">0</value>
+        <value name="shockBonus">0</value>
+        
+        <!-- Weapon properties -->
+        <value name="damage">50</value>
+        <value name="range">400</value>
+        
+        <!-- Repair -->
+        <value name="repairableWithKits">Firearm</value>
+        <value name="repairCosts">
+            <repair_kit_type name="ItemCleaningKit">2</repair_kit_type>
+            <repair_kit_type name="ItemOilcan">1</repair_kit_type>
+        </value>
+        
+        <!-- Attachments allowed on this weapon -->
+        <attachments>
+            <attachment name="Optics" />
+            <attachment name="Magazine" />
+            <attachment name="Stock" />
+            <attachment name="Muzzle" />
+        </attachments>
+    </type>
+
+    <!-- ================================================================== -->
+    <!-- EXAMPLE CUSTOM MELEE WEAPON -->
+    <!-- ================================================================== -->
+    
+    <type name="CustomAxe">
+        <category name="weapon" />
+        <category name="melee" />
+        
+        <name>Custom War Axe</name>
+        
+        <!-- Inventory properties -->
+        <value name="inventorySlots">4</value>
+        <value name="weight">2000</value>
+        <value name="absorbency">0</value>
+        
+        <!-- Weapon properties -->
+        <value name="damage">45</value>
+        <value name="range">1.5</value>
+        <value name="melee">1</value>
+        
+        <!-- Repair -->
+        <value name="repairableWithKits">Melee</value>
+        <value name="repairCosts">
+            <repair_kit_type name="ItemWhetstone">1</repair_kit_type>
+        </value>
+    </type>
+
+    <!-- ================================================================== -->
+    <!-- EXAMPLE CUSTOM CLOTHING -->
+    <!-- ================================================================== -->
+    
+    <type name="CustomVest">
+        <category name="clothing" />
+        <category name="torso" />
+        
+        <name>Custom Tactical Vest</name>
+        
+        <!-- Inventory properties -->
+        <value name="inventorySlots">12</value>
+        <value name="weight">3000</value>
+        <value name="absorbency">100</value>
+        
+        <!-- Clothing properties -->
+        <value name="armorLevel">2</value>
+        <value name="thermalProtection">0.5</value>
+        
+        <!-- Cargo for items -->
+        <cargo name="default">
+            <item name="Magazine_762x39" chance="0.3" />
+            <item name="ItemBandage" chance="0.2" />
+        </cargo>
+    </type>
+
+    <!-- ================================================================== -->
+    <!-- EXAMPLE CUSTOM CONSUMABLE -->
+    <!-- ================================================================== -->
+    
+    <type name="CustomSupplements">
+        <category name="food" />
+        <category name="consumable" />
+        
+        <name>Energy Drink</name>
+        
+        <!-- Inventory properties -->
+        <value name="inventorySlots">1</value>
+        <value name="weight">500</value>
+        <value name="absorbency">0</value>
+        
+        <!-- Consumable properties -->
+        <value name="hungerBonus">-150</value>
+        <value name="healthBonus">10</value>
+        <value name="bloodBonus">0</value>
+        <value name="shockBonus">50</value>
+        <value name="foodUnits">100</value>
+        
+        <!-- Can be used/consumed -->
+        <value name="usable">1</value>
+        <value name="quantityBar">1</value>
+    </type>
+
+    <!-- ================================================================== -->
+    <!-- EXAMPLE SPAWN CONFIGURATION -->
+    <!-- ================================================================== -->
+    
+    <!-- This defines what items spawn in different locations -->
+    <!-- Adjust chance values to control spawn rates -->
+    
+    <type name="HouseSpawns">
+        <cargo name="default">
+            <item name="ItemKnife" chance="0.3" />
+            <item name="ItemDressing" chance="0.5" />
+            <item name="ItemBandage" chance="0.4" />
+            <item name="ItemCanned" chance="0.2" />
+        </cargo>
+    </type>
+
+    <type name="MilitarySpawns">
+        <cargo name="default">
+            <item name="CustomRifle" chance="0.1" />
+            <item name="Magazine_762x39" chance="0.4" />
+            <item name="ItemAmmo" chance="0.3" />
+            <item name="ItemFirstAidKit" chance="0.2" />
+            <item name="CustomTacticalVest" chance="0.15" />
+        </cargo>
+    </type>
+
+    <!-- ================================================================== -->
+    <!-- MODIFY EXISTING ITEMS BELOW -->
+    <!-- ================================================================== -->
+    
+    <!-- Example: Modify spawn chances of existing items -->
+    <!-- Copy original item type definition and modify values -->
+    
+</types>

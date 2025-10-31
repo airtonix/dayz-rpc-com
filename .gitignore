@@ -1,0 +1,60 @@
+# DayZ Server Repository .gitignore
+
+# Server files
+server/
+!server/README.md
+
+# Logs
+logs/
+*.log
+
+# Backups
+backups/
+
+# Mods (exclude from git, but track structure)
+mods/*/
+!mods/.gitkeep
+
+# Keys
+keys/
+!keys/.gitkeep
+
+# Local configuration overrides
+config/serverDZ.local.cfg
+config/mission.local.xml
+
+# OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Temp files
+*.tmp
+*.swp
+*.swo
+*~
+
+# SteamCMD
+steamcmd/
+
+# Node modules (if using any Node-based tools)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Process
+*.pid

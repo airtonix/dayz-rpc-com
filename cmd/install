@@ -1,0 +1,410 @@
+#!/bin/bash
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+WORKSHOP_ID=221100
+
+declare -A SERVER_TYPES
+SERVER_TYPES[stable]="223350"
+SERVER_TYPES[experimental]="1042420"
+
+STEAMCMD_CMD=""
+
+echo "========================================"
+echo "DayZ Server Installation Script"
+echo "========================================"
+echo ""
+
+print_usage() {
+    cat << EOF
+Usage: $0 [OPTIONS]
+
+Options:
+    --stable            Install stable DayZ server (default)
+    --experimental      Install experimental DayZ server
+    --with-mods         Install mods after server installation
+    --help              Show this help message
+
+Examples:
+    $0
+    $0 --experimental
+    $0 --with-mods
+EOF
+}
+
+get_steamcmd() {
+    if command -v steamcmd &> /dev/null; then
+        STEAMCMD_CMD="steamcmd"
+        return 0
+    fi
+    
+    if [ -f "$HOME/.local/share/steamcmd/steamcmd.sh" ]; then
+        STEAMCMD_CMD="$HOME/.local/share/steamcmd/steamcmd.sh"
+        return 0
+    fi
+    
+    if [ -f "$HOME/.steam/steamcmd/steamcmd.sh" ]; then
+        STEAMCMD_CMD="$HOME/.steam/steamcmd/steamcmd.sh"
+        return 0
+    fi
+    
+    return 1
+}
+
+check_requirements() {
+    echo "[*] Checking system requirements..."
+    
+    local missing_tools=0
+    
+    for tool in curl tar; do
+        if ! command -v "$tool" &> /dev/null; then
+            echo "[!] Missing: $tool"
+            missing_tools=1
+        fi
+    done
+    
+    if [ $missing_tools -eq 1 ]; then
+        echo "[!] Installing missing tools..."
+        sudo apt-get update
+        sudo apt-get install -y curl tar
+    fi
+    
+    if ! get_steamcmd; then
+        echo "[*] SteamCMD not found. Installing..."
+        install_steamcmd
+        if ! get_steamcmd; then
+            echo "[!] Failed to install SteamCMD"
+            exit 1
+        fi
+    else
+        echo "[+] SteamCMD found at: $STEAMCMD_CMD"
+    fi
+    
+    echo "[+] Requirements check complete"
+}
+
+install_steamcmd() {
+    local steamcmd_dir="$HOME/.local/share/steamcmd"
+    mkdir -p "$steamcmd_dir"
+    
+    echo "[*] Downloading SteamCMD to $steamcmd_dir..."
+    
+    if ! curl -sqL "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz" | tar zxvf - -C "$steamcmd_dir" 2>&1; then
+        echo "[!] Failed to download/extract SteamCMD"
+        exit 1
+    fi
+    
+    chmod +x "$steamcmd_dir/steamcmd.sh"
+    
+    if ! [ -f "$steamcmd_dir/steamcmd.sh" ]; then
+        echo "[!] SteamCMD installation failed"
+        exit 1
+    fi
+    
+    mkdir -p "$HOME/.local/bin"
+    ln -sf "$steamcmd_dir/steamcmd.sh" "$HOME/.local/bin/steamcmd"
+    
+    echo "[+] SteamCMD installed successfully"
+}
+
+setup_directories() {
+    echo "[*] Setting up directories..."
+    
+    mkdir -p "$PROJECT_DIR"/{mods,keys,logs,data,backups,mpmissions}
+    mkdir -p "$PROJECT_DIR/server"/{battleye,profiles,steamapps/workshop/content/$WORKSHOP_ID}
+    
+    echo "[+] Directories created"
+}
+
+run_steamcmd() {
+    if [ -z "$STEAMCMD_CMD" ]; then
+        echo "[!] SteamCMD not available"
+        return 1
+    fi
+    
+    "$STEAMCMD_CMD" "$@"
+    return $?
+}
+
+install_server_files() {
+    local server_mode="${1:-stable}"
+    local server_id="${SERVER_TYPES[$server_mode]}"
+    
+    echo "[*] Installing DayZ server files ($server_mode)..."
+    echo "    Server App ID: $server_id"
+    echo ""
+    echo "This requires a Steam account with DayZ server license."
+    echo ""
+    
+    read -p "Enter Steam username: " steam_user
+    read -sp "Enter Steam password: " steam_pass
+    echo ""
+    
+    if [ -z "$steam_user" ] || [ -z "$steam_pass" ]; then
+        echo "[!] Steam credentials are required"
+        return 1
+    fi
+    
+    echo "[*] Downloading server files via SteamCMD..."
+    echo "[*] This may take 30-60 minutes (downloading ~50GB)..."
+    echo ""
+    
+    if run_steamcmd \
+        +@NoPromptForPassword 1 \
+        +login "$steam_user" "$steam_pass" \
+        +force_install_dir "$PROJECT_DIR/server" \
+        +app_update "$server_id" validate \
+        +quit; then
+        
+        echo "[+] Server files downloaded successfully"
+        return 0
+    else
+        echo "[!] Failed to download server files"
+        echo "[!] Possible reasons:"
+        echo "    - Invalid Steam credentials"
+        echo "    - Steam account doesn't have DayZ server license"
+        echo "    - Network connectivity issue"
+        echo "    - SteamCMD encountered an error"
+        return 1
+    fi
+}
+
+install_mods() {
+    local steam_user=$1
+    local steam_pass=$2
+    
+    if [ -z "$steam_user" ] || [ -z "$steam_pass" ]; then
+        read -p "Enter Steam username: " steam_user
+        read -sp "Enter Steam password: " steam_pass
+        echo ""
+    fi
+    
+    echo "[*] Checking for mods to install..."
+    
+    if [ ! -f "$PROJECT_DIR/config/mods.cfg" ]; then
+        echo "[!] No mods.cfg found in config/"
+        echo "[*] Creating template..."
+        create_mods_config
+        return 0
+    fi
+    
+    source "$PROJECT_DIR/config/mods.cfg"
+    
+    if [ ${#MOD_LIST[@]} -eq 0 ]; then
+        echo "[*] No mods configured in mods.cfg"
+        return 0
+    fi
+    
+    echo "[*] Installing ${#MOD_LIST[@]} mod(s)..."
+    
+    local steamcmd_args=(
+        "+@NoPromptForPassword 1"
+        "+login $steam_user $steam_pass"
+        "+force_install_dir $PROJECT_DIR/server"
+    )
+    
+    for mod_id in "${!MOD_LIST[@]}"; do
+        steamcmd_args+=("+workshop_download_item $WORKSHOP_ID $mod_id validate")
+        echo "    - ${MOD_LIST[$mod_id]} (ID: $mod_id)"
+    done
+    
+    steamcmd_args+=("+quit")
+    
+    if ! steamcmd "${steamcmd_args[@]}"; then
+        echo "[!] Failed to download some mods"
+        exit 1
+    fi
+    
+    process_mods
+    
+    echo "[+] Mods installed successfully"
+}
+
+process_mods() {
+    echo "[*] Processing mods..."
+    
+    local mod_count=0
+    
+    source "$PROJECT_DIR/config/mods.cfg"
+    
+    for mod_id in "${!MOD_LIST[@]}"; do
+        local mod_name="${MOD_LIST[$mod_id]}"
+        local mod_source="$PROJECT_DIR/server/steamapps/workshop/content/$WORKSHOP_ID/$mod_id"
+        local mod_target="$PROJECT_DIR/mods/$mod_name"
+        
+        if [ ! -d "$mod_source" ]; then
+            echo "[!] Mod source not found: $mod_source"
+            continue
+        fi
+        
+        echo "[*] Processing $mod_name..."
+        
+        rm -rf "$mod_target"
+        cp -r "$mod_source" "$mod_target"
+        
+        find "$mod_target" -depth -execdir bash -c 'mv "$0" "${0,,}"' {} \; 2>/dev/null || true
+        
+        if [ -f "$mod_target"/*.bikey ]; then
+            cp "$mod_target"/*.bikey "$PROJECT_DIR/keys/" 2>/dev/null || true
+        fi
+        
+        ((mod_count++))
+    done
+    
+    echo "[+] Processed $mod_count mod(s)"
+}
+
+create_mods_config() {
+    cat > "$PROJECT_DIR/config/mods.cfg" << 'EOF'
+#!/bin/bash
+
+declare -A MOD_LIST
+MOD_LIST=(
+    [1559212036]="@cf"
+    [1564026768]="@cot"
+)
+
+export MOD_LIST
+EOF
+    echo "[+] Created template at $PROJECT_DIR/config/mods.cfg"
+    echo "[*] Edit this file to add your mods"
+}
+
+setup_configuration() {
+    echo "[*] Setting up configuration files..."
+    
+    if [ ! -f "$PROJECT_DIR/server/serverDZ.cfg" ]; then
+        cp "$PROJECT_DIR/config/serverDZ.cfg" "$PROJECT_DIR/server/" 2>/dev/null || echo "[!] serverDZ.cfg not found"
+    fi
+    
+    mkdir -p "$PROJECT_DIR/server/mpmissions"
+    
+    echo "[+] Configuration files ready"
+}
+
+setup_permissions() {
+    echo "[*] Setting up permissions..."
+    
+    chmod +x "$SCRIPT_DIR"/*.sh
+    chmod -R 755 "$PROJECT_DIR/server" 2>/dev/null || true
+    
+    echo "[+] Permissions set"
+}
+
+create_systemd_service() {
+    echo "[*] Creating systemd service..."
+    
+    sudo tee /etc/systemd/system/dayz-server.service > /dev/null <<EOF
+[Unit]
+Description=DayZ Server
+After=network.target
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=$PROJECT_DIR/server
+ExecStart=$PROJECT_DIR/scripts/start-server.sh
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    sudo systemctl daemon-reload
+    echo "[+] Systemd service created"
+    echo "[+] Use 'systemctl start dayz-server' to start the server"
+}
+
+main() {
+    local server_mode="stable"
+    local install_mods_flag=false
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --stable)
+                server_mode="stable"
+                shift
+                ;;
+            --experimental)
+                server_mode="experimental"
+                shift
+                ;;
+            --with-mods)
+                install_mods_flag=true
+                shift
+                ;;
+            --help)
+                print_usage
+                exit 0
+                ;;
+            *)
+                echo "[!] Unknown option: $1"
+                print_usage
+                exit 1
+                ;;
+        esac
+    done
+    
+    check_requirements || exit 1
+    setup_directories || exit 1
+    
+    if ! install_server_files "$server_mode"; then
+        echo "[!] Server installation failed"
+        exit 1
+    fi
+    
+    if [ "$install_mods_flag" = true ]; then
+        echo ""
+        read -p "Install configured mods as well? (y/n) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            "$SCRIPT_DIR/install-mods.sh" --install || {
+                echo "[!] Mod installation failed"
+                exit 1
+            }
+        fi
+    fi
+    
+    setup_configuration || true
+    setup_permissions || true
+    
+    echo ""
+    echo "========================================"
+    echo "Installation Complete!"
+    echo "========================================"
+    echo ""
+    
+    if [ -f "$PROJECT_DIR/server/DayZServer" ]; then
+        echo "[+] DayZ Server successfully installed at:"
+        echo "    $PROJECT_DIR/server/DayZServer"
+        echo ""
+    else
+        echo "[!] Warning: DayZServer executable not found"
+        echo "[!] Check the installation logs above for errors"
+        echo ""
+    fi
+    
+    echo "Next steps:"
+    echo "1. Review server config: $PROJECT_DIR/config/serverDZ.cfg"
+    echo "2. Edit mods (if needed): $PROJECT_DIR/config/mods.cfg"
+    echo "3. Start the server:"
+    echo "   make start"
+    echo "   OR"
+    echo "   $SCRIPT_DIR/start-server.sh"
+    echo ""
+    echo "To manage mods later, run:"
+    echo "    $SCRIPT_DIR/install-mods.sh --help"
+    echo ""
+    
+    read -p "Create systemd service? (y/n) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        create_systemd_service || true
+    fi
+}
+
+main "$@"
+exit $?

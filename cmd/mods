@@ -1,0 +1,359 @@
+#!/bin/bash
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+SERVER_DIR="$PROJECT_DIR/server"
+WORKSHOP_ID=221100
+
+STEAMCMD_CMD=""
+
+get_steamcmd() {
+    if command -v steamcmd &> /dev/null; then
+        STEAMCMD_CMD="steamcmd"
+        return 0
+    fi
+    
+    if [ -f "$HOME/.local/share/steamcmd/steamcmd.sh" ]; then
+        STEAMCMD_CMD="$HOME/.local/share/steamcmd/steamcmd.sh"
+        return 0
+    fi
+    
+    if [ -f "$HOME/.steam/steamcmd/steamcmd.sh" ]; then
+        STEAMCMD_CMD="$HOME/.steam/steamcmd/steamcmd.sh"
+        return 0
+    fi
+    
+    return 1
+}
+
+run_steamcmd() {
+    if [ -z "$STEAMCMD_CMD" ]; then
+        echo "[!] SteamCMD not found"
+        return 1
+    fi
+    "$STEAMCMD_CMD" "$@"
+    return $?
+}
+
+print_usage() {
+    cat << EOF
+DayZ Mod Installer
+
+Usage: $0 [OPTIONS]
+
+Options:
+    --list              List configured mods
+    --add ID NAME       Add a mod to config
+    --remove NAME       Remove a mod from config
+    --install           Install all configured mods
+    --update            Update all installed mods
+    --help              Show this help message
+
+Examples:
+    $0 --list
+    $0 --add 1559212036 '@cf'
+    $0 --install
+    $0 --update
+
+EOF
+}
+
+check_server_exists() {
+    if [ ! -f "$SERVER_DIR/DayZServer" ]; then
+        echo "[!] Error: DayZ Server not installed at $SERVER_DIR"
+        echo "[*] Run: $SCRIPT_DIR/install-server.sh"
+        exit 1
+    fi
+}
+
+load_mod_config() {
+    if [ ! -f "$PROJECT_DIR/config/mods.cfg" ]; then
+        echo "[!] No mods.cfg found at $PROJECT_DIR/config/mods.cfg"
+        echo "[*] Creating template..."
+        create_mod_config
+        return 1
+    fi
+    
+    source "$PROJECT_DIR/config/mods.cfg"
+    return 0
+}
+
+create_mod_config() {
+    cat > "$PROJECT_DIR/config/mods.cfg" << 'EOF'
+#!/bin/bash
+
+declare -A MOD_LIST
+MOD_LIST=(
+    [1559212036]="@cf"
+    [1564026768]="@cot"
+)
+
+export MOD_LIST
+EOF
+    echo "[+] Created $PROJECT_DIR/config/mods.cfg"
+    echo "[*] Edit this file to configure your mods"
+}
+
+list_mods() {
+    echo "========================================"
+    echo "Configured Mods"
+    echo "========================================"
+    echo ""
+    
+    if [ ! -f "$PROJECT_DIR/config/mods.cfg" ]; then
+        echo "[!] No mods.cfg found at $PROJECT_DIR/config/mods.cfg"
+        return 0
+    fi
+    
+    source "$PROJECT_DIR/config/mods.cfg" || true
+    
+    if [ ${#MOD_LIST[@]} -eq 0 ]; then
+        echo "[*] No mods configured"
+        return 0
+    fi
+    
+    local count=1
+    for mod_id in "${!MOD_LIST[@]}"; do
+        local mod_name="${MOD_LIST[$mod_id]}"
+        echo "$count. $mod_name (ID: $mod_id)"
+        
+        if [ -d "$PROJECT_DIR/mods/$mod_name" ]; then
+            local size=$(du -sh "$PROJECT_DIR/mods/$mod_name" 2>/dev/null | cut -f1)
+            echo "   Status: [INSTALLED] ($size)"
+        else
+            echo "   Status: [NOT INSTALLED]"
+        fi
+        
+        ((count++))
+    done
+    
+    echo ""
+    echo "Total: ${#MOD_LIST[@]} mod(s)"
+}
+
+add_mod() {
+    local mod_id=$1
+    local mod_name=$2
+    
+    if [ -z "$mod_id" ] || [ -z "$mod_name" ]; then
+        echo "[!] Usage: $0 --add MOD_ID MOD_NAME"
+        echo "[!] Example: $0 --add 1559212036 '@cf'"
+        exit 1
+    fi
+    
+    if [ ! -f "$PROJECT_DIR/config/mods.cfg" ]; then
+        create_mod_config
+    fi
+    
+    if grep -q "\[$mod_id\]=" "$PROJECT_DIR/config/mods.cfg"; then
+        echo "[!] Mod ID $mod_id already exists"
+        exit 1
+    fi
+    
+    local temp_file=$(mktemp)
+    head -n -3 "$PROJECT_DIR/config/mods.cfg" > "$temp_file"
+    
+    echo "    [$mod_id]=\"$mod_name\"" >> "$temp_file"
+    echo ")" >> "$temp_file"
+    echo "" >> "$temp_file"
+    echo "export MOD_LIST" >> "$temp_file"
+    
+    cat "$temp_file" > "$PROJECT_DIR/config/mods.cfg"
+    rm "$temp_file"
+    
+    echo "[+] Added mod: $mod_name (ID: $mod_id)"
+}
+
+remove_mod() {
+    local mod_name=$1
+    
+    if [ -z "$mod_name" ]; then
+        echo "[!] Usage: $0 --remove MOD_NAME"
+        exit 1
+    fi
+    
+    if [ ! -f "$PROJECT_DIR/config/mods.cfg" ]; then
+        echo "[!] No mods.cfg found"
+        exit 1
+    fi
+    
+    if ! grep -q "\"$mod_name\"" "$PROJECT_DIR/config/mods.cfg"; then
+        echo "[!] Mod not found: $mod_name"
+        exit 1
+    fi
+    
+    local temp_file=$(mktemp)
+    grep -v "\"$mod_name\"" "$PROJECT_DIR/config/mods.cfg" > "$temp_file"
+    
+    cat "$temp_file" > "$PROJECT_DIR/config/mods.cfg"
+    rm "$temp_file"
+    
+    echo "[+] Removed mod: $mod_name"
+}
+
+install_mods() {
+    check_server_exists
+    
+    if ! load_mod_config; then
+        echo "[*] No mods to install"
+        return 0
+    fi
+    
+    if [ ${#MOD_LIST[@]} -eq 0 ]; then
+        echo "[*] No mods configured"
+        return 0
+    fi
+    
+    echo "[*] Installing ${#MOD_LIST[@]} mod(s)..."
+    echo ""
+    
+    read -p "Enter Steam username: " steam_user
+    read -sp "Enter Steam password: " steam_pass
+    echo ""
+    
+    local steamcmd_args=(
+        "+@NoPromptForPassword 1"
+        "+login $steam_user $steam_pass"
+        "+force_install_dir $SERVER_DIR"
+    )
+    
+    for mod_id in "${!MOD_LIST[@]}"; do
+        steamcmd_args+=("+workshop_download_item $WORKSHOP_ID $mod_id validate")
+        echo "[*] Downloading: ${MOD_LIST[$mod_id]} (ID: $mod_id)"
+    done
+    
+    steamcmd_args+=("+quit")
+    
+    echo ""
+    
+    if ! get_steamcmd; then
+        echo "[!] SteamCMD not found"
+        return 1
+    fi
+    
+    if ! run_steamcmd "${steamcmd_args[@]}"; then
+        echo "[!] Failed to download mods"
+        return 1
+    fi
+    
+    process_mods
+}
+
+update_mods() {
+    check_server_exists
+    
+    if ! load_mod_config; then
+        return 0
+    fi
+    
+    if [ ${#MOD_LIST[@]} -eq 0 ]; then
+        echo "[*] No mods to update"
+        return 0
+    fi
+    
+    echo "[*] Updating ${#MOD_LIST[@]} mod(s)..."
+    echo ""
+    
+    read -p "Enter Steam username: " steam_user
+    read -sp "Enter Steam password: " steam_pass
+    echo ""
+    
+    local steamcmd_args=(
+        "+@NoPromptForPassword 1"
+        "+login $steam_user $steam_pass"
+        "+force_install_dir $SERVER_DIR"
+    )
+    
+    for mod_id in "${!MOD_LIST[@]}"; do
+        steamcmd_args+=("+workshop_download_item $WORKSHOP_ID $mod_id validate")
+    done
+    
+    steamcmd_args+=("+quit")
+    
+    if ! get_steamcmd; then
+        echo "[!] SteamCMD not found"
+        return 1
+    fi
+    
+    if ! run_steamcmd "${steamcmd_args[@]}"; then
+        echo "[!] Failed to update mods"
+        return 1
+    fi
+    
+    process_mods
+}
+
+process_mods() {
+    echo ""
+    echo "[*] Processing mods..."
+    
+    local mod_count=0
+    
+    source "$PROJECT_DIR/config/mods.cfg"
+    
+    for mod_id in "${!MOD_LIST[@]}"; do
+        local mod_name="${MOD_LIST[$mod_id]}"
+        local mod_source="$SERVER_DIR/steamapps/workshop/content/$WORKSHOP_ID/$mod_id"
+        local mod_target="$PROJECT_DIR/mods/$mod_name"
+        
+        if [ ! -d "$mod_source" ]; then
+            echo "[!] Mod source not found: $mod_source"
+            continue
+        fi
+        
+        echo "[*] Processing $mod_name..."
+        
+        rm -rf "$mod_target"
+        mkdir -p "$mod_target"
+        cp -r "$mod_source"/* "$mod_target/" 2>/dev/null || true
+        
+        find "$mod_target" -depth -execdir bash -c 'mv "$0" "${0,,}"' {} \; 2>/dev/null || true
+        
+        if find "$mod_target" -name "*.bikey" | grep -q .; then
+            mkdir -p "$PROJECT_DIR/keys"
+            find "$mod_target" -name "*.bikey" -exec cp {} "$PROJECT_DIR/keys/" \;
+            echo "    [+] Copied signing keys"
+        fi
+        
+        ((mod_count++))
+    done
+    
+    echo "[+] Processed $mod_count mod(s)"
+    echo ""
+    echo "Mods are ready in: $PROJECT_DIR/mods"
+}
+
+main() {
+    if [ $# -eq 0 ]; then
+        print_usage
+        exit 0
+    fi
+    
+    case "$1" in
+        --list)
+            list_mods
+            ;;
+        --add)
+            add_mod "$2" "$3"
+            ;;
+        --remove)
+            remove_mod "$2"
+            ;;
+        --install)
+            install_mods
+            ;;
+        --update)
+            update_mods
+            ;;
+        --help)
+            print_usage
+            ;;
+        *)
+            echo "[!] Unknown option: $1"
+            print_usage
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

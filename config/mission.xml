@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- DayZ Mission Configuration
+     Define mission parameters, spawn points, and events
+-->
+
+<mission version="1.0">
+    <name>DayZ_Default</name>
+    <type>Survival</type>
+    
+    <!-- ================================================================== -->
+    <!-- PLAYER SPAWN POINTS -->
+    <!-- ================================================================== -->
+    
+    <playerSpawnTypes>
+        <!-- Default spawn -->
+        <spawnType name="default" />
+        
+        <!-- Coastal spawns -->
+        <spawnType name="coast">
+            <spawn name="Balota">
+                <position x="4571" z="9346" r="100" />
+            </spawn>
+            <spawn name="Elektrozavodsk">
+                <position x="9213" z="4783" r="100" />
+            </spawn>
+            <spawn name="Chernarus_North_Coast">
+                <position x="2589" z="1502" r="100" />
+            </spawn>
+        </spawnType>
+        
+        <!-- Inland spawns -->
+        <spawnType name="inland">
+            <spawn name="Stary_Sobor">
+                <position x="6342" z="7245" r="100" />
+            </spawn>
+            <spawn name="Devil_Castle">
+                <position x="4754" z="5278" r="100" />
+            </spawn>
+            <spawn name="Vybor">
+                <position x="7341" z="7752" r="100" />
+            </spawn>
+        </spawnType>
+    </playerSpawnTypes>
+    
+    <!-- ================================================================== -->
+    <!-- LOOT SPAWN CONFIGURATION -->
+    <!-- ================================================================== -->
+    
+    <lootProxies>
+        <!-- Military locations -->
+        <proxy name="Military_Loot">
+            <class name="MilitarySpawns" />
+            <positions>
+                <!-- Balota Military Base -->
+                <position x="4517" z="9325" r="200" />
+                <!-- NWAF -->
+                <position x="2650" z="8100" r="300" />
+            </positions>
+        </proxy>
+        
+        <!-- Residential locations -->
+        <proxy name="House_Loot">
+            <class name="HouseSpawns" />
+            <radius>5000</radius>
+        </proxy>
+        
+        <!-- Industrial locations -->
+        <proxy name="Industrial_Loot">
+            <class name="IndustrialSpawns" />
+            <positions>
+                <position x="3200" z="4500" r="150" />
+            </positions>
+        </proxy>
+    </lootProxies>
+    
+    <!-- ================================================================== -->
+    <!-- ZOMBIE SPAWN CONFIGURATION -->
+    <!-- ================================================================== -->
+    
+    <zombieSpawns>
+        <!-- Cities and towns -->
+        <spawn name="Chernogorsk">
+            <position x="2324" z="4651" r="300" />
+            <density>high</density>
+            <count>50</count>
+        </spawn>
+        
+        <spawn name="Elektrozavodsk">
+            <position x="9213" z="4783" r="250" />
+            <density>high</density>
+            <count>40</count>
+        </spawn>
+        
+        <spawn name="Stary_Sobor">
+            <position x="6342" z="7245" r="150" />
+            <density>medium</density>
+            <count>30</count>
+        </spawn>
+    </zombieSpawns>
+    
+    <!-- ================================================================== -->
+    <!-- ANIMAL SPAWNS -->
+    <!-- ================================================================== -->
+    
+    <animalSpawns>
+        <spawn name="Deer_Forest">
+            <position x="5000" z="5000" r="2000" />
+            <animal>Deer</animal>
+            <count>5</count>
+        </spawn>
+        
+        <spawn name="Boar_Forest">
+            <position x="6000" z="6000" r="1500" />
+            <animal>Boar</animal>
+            <count>3</count>
+        </spawn>
+    </animalSpawns>
+    
+    <!-- ================================================================== -->
+    <!-- WEATHER SETTINGS -->
+    <!-- ================================================================== -->
+    
+    <environment>
+        <!-- Time settings -->
+        <time>
+            <dayLength>60</dayLength>
+            <nightLength>20</nightLength>
+            <startTime>10:00</startTime>
+        </time>
+        
+        <!-- Weather -->
+        <weather>
+            <type>random</type>
+            <rainChance>0.3</rainChance>
+            <fogType>realistic</fogType>
+            <windStrength>0.5</windStrength>
+        </weather>
+        
+        <!-- Water level -->
+        <water>
+            <level>standard</level>
+            <temperature>15</temperature>
+        </water>
+    </environment>
+    
+    <!-- ================================================================== -->
+    <!-- SCHEDULED EVENTS & MESSAGES -->
+    <!-- ================================================================== -->
+    
+    <events>
+        <!-- Welcome message -->
+        <message time="00:00" text="Welcome to our DayZ server!" />
+        
+        <!-- Maintenance warning -->
+        <message time="23:00" text="Server restart in 1 hour for maintenance" />
+        
+        <!-- Dynamic events can be added here -->
+        <meteorShower chance="0.1" enabled="1" />
+        <animalMigration enabled="1" />
+    </events>
+    
+    <!-- ================================================================== -->
+    <!-- VEHICLE SPAWNS -->
+    <!-- ================================================================== -->
+    
+    <vehicleSpawns>
+        <!-- Berezino -->
+        <vehicle name="UH1Y" chance="0.3">
+            <position x="9250" z="5340" r="50" />
+        </vehicle>
+        
+        <!-- Military locations -->
+        <vehicle name="V3S" chance="0.5">
+            <position x="4500" z="9300" r="75" />
+        </vehicle>
+    </vehicleSpawns>
+    
+    <!-- ================================================================== -->
+    <!-- MAP FEATURES -->
+    <!-- ================================================================== -->
+    
+    <mapFeatures>
+        <!-- Radiation zones (if applicable) -->
+        <zone name="Radiation_Zone">
+            <position x="3500" z="7500" r="500" />
+            <damage>1</damage>
+            <damagePerTick>0.1</damagePerTick>
+        </zone>
+        
+        <!-- Safe zones (PvP disabled) -->
+        <zone name="Safe_Zone">
+            <position x="9200" z="4750" r="100" />
+            <pvpDisabled>1</pvpDisabled>
+        </zone>
+    </mapFeatures>
+    
+</mission>

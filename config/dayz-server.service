@@ -1,0 +1,11 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<service-group>
+  <name replace-wildcards="yes">%h - DayZ Server</name>
+  <service>
+    <type>_dayz._tcp</type>
+    <port>2302</port>
+    <txt-record>hostname=My DayZ Server</txt-record>
+    <txt-record>version=1.25</txt-record>
+  </service>
+</service-group>
