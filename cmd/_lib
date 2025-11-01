@@ -1,0 +1,248 @@
+#!/usr/bin/env bash
+# vim: set filetype=bash:
+DOCKER_READY=0
+HERE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT_DIR="$(git -C "$HERE_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$HERE_DIR")"
+
+function requires_command() {
+    local cmd="$1"
+    local message="$2"
+
+    echo "[*] Checking for command '$cmd'..."
+
+    if ! command -v "$cmd" &> /dev/null; then
+        if [[ -z "$message" ]]; then
+            message="Required command '$cmd' is not available."
+        fi
+        echo "[!] $message"
+        exit 1
+    fi
+}
+
+function requires_path  {
+    local path="$1"
+    local message="$2"
+    echo "[*] Checking for path '$path'..."
+
+    if [[ ! -e "$path" ]]; then
+        if [[ -z "$message" ]]; then
+            message="Required path '$path' does not exist."
+        fi
+        echo "[!] $message"
+        exit 1
+    fi
+}
+
+function requires_command_output() {
+    local cmd="$1"
+    local expected_output="$2"
+    local message="$3"
+    local output
+
+    echo "[*] Checking output of command '$cmd'..."
+
+    output=$($cmd 2>&1)
+    if [[ "$output" != *"$expected_output"* ]]; then
+        if [[ -z "$message" ]]; then
+            message="Command '$cmd' did not produce expected output."
+        fi
+        echo "[!] $message"
+        exit 1
+    fi
+}
+
+function requires_systemd_unit_status() {
+    local unit="$1"
+    local expected_status="$2"
+    local message="$3"
+    local status
+
+    echo "[*] Checking systemd unit '$unit' status..."
+
+    status=$(systemctl is-active "$unit" 2>&1)
+    if [[ "$status" != "$expected_status" ]]; then
+        if [[ -z "$message" ]]; then
+            message="Systemd unit '$unit' is not in expected status '$expected_status'. Current status: '$status'"
+        fi
+        echo "[!] $message"
+        exit 1
+    fi
+}
+
+function check_docker() {
+    echo "[*] Checking Docker..."
+
+    requires_command "docker"
+    requires_command_output "docker ps" ""
+
+    echo "[+] Docker is ready"
+    DOCKER_READY=1
+    return 0
+}
+
+
+function check_jq() {
+    if ! command -v jq &> /dev/null; then
+        echo "[!] Error: jq is required but not installed"
+        echo "[*] Install it with: sudo apt-get install jq"
+        exit 1
+    fi
+}
+
+function check_curl() {
+     if ! command -v curl &> /dev/null; then
+         echo "[!] Error: curl is required but not installed"
+         echo "[*] Install it with: sudo apt-get install curl"
+         exit 1
+     fi
+}
+
+function docker_pull_image() {
+    local image="$1"
+
+    echo "[*] Checking Docker image '$image'..."
+
+    check_docker
+
+    if ! docker image inspect "$image" > /dev/null 2>&1; then
+        echo "[*] Pulling Docker image '$image'..."
+        if ! docker pull "$image" > /dev/null 2>&1; then
+            echo "[!] Failed to pull Docker image '$image'."
+            return 1
+        fi
+    fi
+
+    return 0
+}
+
+function check_depbo_tools() {
+    docker_pull_image "jerryhopper/depbo-tools:latest" || return 1
+    if ! docker run --rm jerryhopper/depbo-tools:latest makepbo --help 2>&1 | grep -q "Syntax:"; then
+        echo "[!] Failed to run depbo-tools"
+        return 1
+    fi
+}
+
+function docker_depbo_tools() {
+    [[ $DOCKER_READY -eq 1 ]] || check_docker || return 1
+
+    check_depbo_tools
+
+    echo "[*] Running depbo-tools docker container..."
+
+    echo "[*] Mounted directory: $(pwd)"
+    echo "[*] Working directory: $(pwd)"
+    echo ""
+
+    docker run --rm \
+        -v "$(pwd)":$(pwd) \
+        -w $(pwd) \
+         jerryhopper/depbo-tools:latest \
+        "$@"
+}
+
+
+function docker_rapify() {
+    docker_depbo_tools rapify "$@"
+}
+
+function docker_makepbo() {
+    docker_depbo_tools makepbo "$@"
+}
+
+function docker_signpbo() {
+    docker_depbo_tools signpbo "$@"
+}
+
+function docker_armake() {
+    docker_depbo_tools armake "$@"
+}
+
+function docker_extractpbo() {
+    docker_depbo_tools extractpbo "$@"
+}
+
+function get_git_commit_hash() {
+    local repo_path="${1:-.}"
+    git -C "$repo_path" rev-parse --short HEAD 2>/dev/null || echo "unknown"
+}
+
+function get_build_timestamp() {
+    date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+function calculate_mod_version() {
+    local mod_dir="$1"
+    local version=""
+    
+    if [ -z "$mod_dir" ] || [ ! -d "$mod_dir" ]; then
+        echo "0.0.0-local"
+        return
+    fi
+    
+    if git -C "$mod_dir" describe --tags --always 2>/dev/null | grep -q .; then
+        version=$(git -C "$mod_dir" describe --tags --always 2>/dev/null)
+    elif [ -f "$mod_dir/package.json" ]; then
+        version=$(jq -r '.version // empty' "$mod_dir/package.json" 2>/dev/null)
+    elif [ -f "$mod_dir/version" ]; then
+        version=$(cat "$mod_dir/version" 2>/dev/null | tr -d '[:space:]')
+    fi
+    
+    echo "${version:-0.0.0-local}"
+}
+
+function generate_version_metadata() {
+    local version="$1"
+    local output_dir="$2"
+    local commit=$(get_git_commit_hash)
+    local timestamp=$(get_build_timestamp)
+    
+    cat > "$output_dir/version.txt" <<EOF
+{
+  "version": "$version",
+  "commit": "$commit",
+  "buildtime": "$timestamp"
+}
+EOF
+}
+
+function ensure_mod_cpp() {
+    local mod_dir="$1"
+    local mod_name="$2"
+    local version="$3"
+    local output_dir="$4"
+    
+    if [ -f "$mod_dir/mod.cpp" ]; then
+        cp "$mod_dir/mod.cpp" "$output_dir/"
+    else
+        cat > "$output_dir/mod.cpp" <<EOF
+name = "$mod_name";
+version = "$version";
+description = "Mod";
+EOF
+    fi
+}
+
+function create_mod_symlink() {
+    local mod_name="$1"
+    local build_path="$2"
+    local mods_base_path="$3"
+    
+    mkdir -p "$mods_base_path"
+    
+    local symlink_path="$mods_base_path/@${mod_name}"
+    
+    if [ -L "$symlink_path" ]; then
+        rm "$symlink_path"
+    elif [ -d "$symlink_path" ]; then
+        echo "[!] Warning: $symlink_path exists as directory, skipping symlink"
+        return 1
+    fi
+    
+    ln -s "$(cd "$build_path" && pwd)" "$symlink_path" 2>/dev/null || {
+        echo "[!] Warning: Could not create symlink (may require admin on Windows)"
+        return 1
+    }
+    
+    return 0
+}

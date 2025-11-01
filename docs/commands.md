@@ -51,7 +51,7 @@ Installs the DayZ server and optionally downloads mods.
 
 ## Mod Management - ./cmd/mods
 
-Downloads, lists, and manages mods from Steam Workshop.
+Downloads, lists, manages, and builds mods from Steam Workshop and local sources.
 
 ### Usage
 ```bash
@@ -59,11 +59,15 @@ Downloads, lists, and manages mods from Steam Workshop.
 ```
 
 ### Commands
+- `new NAME` - Scaffold a new local mod from template
+- `build NAME` - Build local mod into PBO using depbo-tools
 - `list` - List configured mods
+- `search QUERY` - Search for mods on Steam Workshop
 - `install` - Download and install all configured mods
 - `update` - Update all installed mods to latest version
 - `add ID NAME` - Add a new mod to config
 - `remove NAME` - Remove a mod from config
+- `workbench NAME` - Launch Workbench for a local mod (Windows tools)
 - `help` - Show help message
 
 ### Examples
@@ -71,18 +75,74 @@ Downloads, lists, and manages mods from Steam Workshop.
 # List configured mods
 ./cmd/mods list
 
+# Create a new local mod
+./cmd/mods new mymod
+
+# Build local mod into PBO
+./cmd/mods build mymod
+
+# Search for mods on Steam Workshop
+./cmd/mods search "expansion"
+
 # Install all mods from config
 ./cmd/mods install
 
 # Update all mods to latest version
 ./cmd/mods update
 
-# Add a new mod
+# Add a new mod from Steam Workshop
 ./cmd/mods add 1234567890 @my-mod
 
 # Remove a mod
 ./cmd/mods remove @my-mod
 ```
+
+### Local Mod Development
+
+#### Creating a New Mod
+```bash
+# Create mod from template
+./cmd/mods new mymod
+
+# This creates:
+# - pkgs/mymod/            - Mod source directory
+# - pkgs/mymod/Scripts/    - Script files organized by module
+# - mods/@mymod/           - Symlink to source for development
+```
+
+#### Building a Mod
+```bash
+# Build the mod into PBO format with versioning
+./cmd/mods build mymod
+
+# Output includes:
+# - Versioned PBO: addons/MyMod-1.0.0.pbo
+# - Metadata: version.txt (JSON with commit, buildtime)
+# - Manifest: mod.cpp (mod metadata)
+# - Keys: keys/ directory (if signing keys present)
+# - Symlink: mods/@mymod (ready for server)
+```
+
+#### Requirements for Building
+- Docker with `jerryhopper/depbo-tools` image
+- Source mod in `pkgs/mod-name/` directory
+- Valid `config.cpp` and `$PBOPREFIX$` file
+- Optional: version file, git tags, or package.json for versioning
+
+#### Build Output
+Built mods are placed in:
+```
+build/@modname/
+├── addons/
+│   └── modname-1.0.0.pbo      - Versioned PBO archive
+├── keys/                        - Signing keys (optional)
+├── mod.cpp                      - Mod metadata
+└── version.txt                  - Version metadata (JSON)
+
+mods/@modname/ → ../build/@modname/  - Symlink (ready for server)
+```
+
+See [Build Output Documentation](build-output.md) for detailed structure and versioning information.
 
 ### Mod Configuration
 
@@ -218,4 +278,68 @@ tail -f logs/server.log
 
 # 3. Restart server (config is auto-synced)
 ./cmd/server restart
+```
+
+---
+
+## Build Validation - ./cmd/build-validate
+
+Validates that all local build tools are properly installed and functional using bats test framework.
+
+### Usage
+```bash
+eval "$(mise activate bash)"
+bats tests/cmd-mods.bats
+```
+
+### Test Cases (bats)
+The test suite includes 11 comprehensive tests:
+- Docker daemon availability
+- depbo-tools Docker image availability
+- makepbo PBO file creation
+- PBO file validity (size check)
+- extractpbo PBO extraction
+- extractpbo file preservation (config.cpp)
+- rapify config binarization
+- Binary config validity (size check)
+- cmd/mods build command existence
+- Absolute path handling with docker_makepbo
+- Absolute path handling with docker_extractpbo
+
+### Bats Output
+```
+1..11
+ok 1 docker is available
+ok 2 depbo-tools image is available
+ok 3 makepbo creates PBO file
+ok 4 makepbo output is valid PBO
+ok 5 extractpbo extracts PBO contents
+ok 6 extractpbo preserves config.cpp
+ok 7 rapify creates binary config
+ok 8 rapify output is valid binary
+ok 9 cmd/mods build command exists
+ok 10 docker_makepbo with absolute paths
+ok 11 docker_extractpbo with absolute output path
+```
+
+### Requirements
+- Docker (for depbo-tools backend)
+- bats test framework (via mise)
+- Linux/macOS or WSL2 on Windows
+
+### Troubleshooting
+
+If Docker is not available:
+```bash
+# Install Docker
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+```
+
+If Docker daemon is not running:
+```bash
+# Start Docker daemon
+sudo systemctl start docker
+# Or on macOS
+open -a Docker
 ```

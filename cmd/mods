@@ -2,6 +2,9 @@
 # vim: set filetype=bash:
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+source "$SCRIPT_DIR/_lib"
+
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 SERVER_DIR="$PROJECT_DIR/server"
 CONFIG_FILE="$PROJECT_DIR/config/mods.json"
@@ -16,6 +19,7 @@ Usage: $0 [COMMAND] [ARGS]
 
 Commands:
     new NAME                        - Scaffold a new local mod from template
+    build NAME                      - Build local mod into PBO using depbo-tools
     workbench NAME                  - Launch Workbench for a local mod
     list                            - List configured mods
     search QUERY                    - Search for mods (fuzzy match)
@@ -27,6 +31,7 @@ Commands:
 
 Examples:
     $0 new mymod
+    $0 build mymod
     $0 workbench mymod
     $0 list
     $0 search expansion
@@ -62,22 +67,6 @@ run_steamcmd() {
     fi
     "$STEAMCMD_CMD" "$@"
     return $?
-}
-
-check_jq() {
-    if ! command -v jq &> /dev/null; then
-        echo "[!] Error: jq is required but not installed"
-        echo "[*] Install it with: sudo apt-get install jq"
-        exit 1
-    fi
-}
-
-check_curl() {
-    if ! command -v curl &> /dev/null; then
-        echo "[!] Error: curl is required but not installed"
-        echo "[*] Install it with: sudo apt-get install curl"
-        exit 1
-    fi
 }
 
 
@@ -518,76 +507,149 @@ new_mod() {
     echo "  4. Configure as needed in $mod_dir/config/"
   }
 
-launch_workbench() {
-     local mod_name=$1
+build_mod() {
+    local mod_name=$1
 
-     if [ -z "$mod_name" ]; then
-         echo "[!] Usage: $0 workbench MOD_NAME"
-         echo "[!] Example: $0 workbench mymod"
-         exit 1
-     fi
-
-     local mod_dir="$PROJECT_DIR/pkgs/$mod_name"
-
-     if [ ! -d "$mod_dir" ]; then
-         echo "[!] Error: Mod not found at $mod_dir"
-         exit 1
-     fi
-
-     if ! get_steamcmd; then
-         echo "[!] SteamCMD not found"
-         return 1
-     fi
-
-     local dayz_tools_appid="1559212036"
-     local profiles_dir="$PROJECT_DIR/profiles"
-     mkdir -p "$profiles_dir"
-
-     echo "[*] Launching Workbench for mod: $mod_name"
-
-     "$STEAMCMD_CMD" +@NoPromptForPassword 1 +run_app_build_app "$dayz_tools_appid" -doLogs -profiles="$profiles_dir" -repository="$mod_dir" +quit
- }
-
-main() {
-    if [ $# -eq 0 ]; then
-        print_usage
-        exit 0
+    if [ -z "$mod_name" ]; then
+        echo "[!] Usage: $0 build MOD_NAME"
+        echo "[!] Example: $0 build mymod"
+        exit 1
     fi
 
-     case "$1" in
-         new)
-             new_mod "$2"
-             ;;
-         workbench)
-             launch_workbench "$2"
-             ;;
-         list)
-             list_mods
-             ;;
-         search)
-             search_mods "${@:2}"
-             ;;
-         add)
-             add_mod "$2" "$3"
-             ;;
-         remove)
-             remove_mod "$2"
-             ;;
-         install)
-             install_mods
-             ;;
-         update)
-             update_mods
-             ;;
-         help|--help|-h)
-             print_usage
-             ;;
-         *)
-             echo "[!] Unknown command: $1"
-             print_usage
-             exit 1
-             ;;
-     esac
+    local mod_dir="$PROJECT_DIR/pkgs/$mod_name"
+
+    if [ ! -d "$mod_dir" ]; then
+        echo "[!] Error: Mod not found at $mod_dir"
+        exit 1
+    fi
+
+    check_docker
+
+    local version=$(calculate_mod_version "$mod_dir")
+    local pbo_filename="${mod_name}-${version}.pbo"
+    local build_dir="$PROJECT_DIR/build/@$mod_name"
+    mkdir -p "$build_dir/addons" "$build_dir/keys"
+
+    echo "[*] Building mod: $mod_name"
+    echo "[*] Version: $version"
+    echo "[*] Source: $mod_dir"
+    echo "[*] Output: $build_dir"
+    echo ""
+
+    docker_pull_image jerryhopper/depbo-tools:latest || return 1
+
+    echo "[*] Creating PBO from source..."
+    docker_depbo_tools makepbo -@="$mod_name" "$mod_dir" "$build_dir/addons/$pbo_filename" || {
+        echo "[!] Failed to create PBO"
+        return 1
+    }
+
+    echo "[*] Generating version metadata..."
+    generate_version_metadata "$version" "$build_dir"
+
+    echo "[*] Ensuring mod.cpp..."
+    ensure_mod_cpp "$mod_dir" "$mod_name" "$version" "$build_dir"
+
+    if find "$mod_dir" -name "*.bikey" -o -name "*.biprivatekey" | grep -q .; then
+        echo "[*] Copying signing keys..."
+        find "$mod_dir" -name "*.bikey" -exec cp {} "$build_dir/keys/" \; 2>/dev/null || true
+        find "$mod_dir" -name "*.biprivatekey" -exec cp {} "$build_dir/keys/" \; 2>/dev/null || true
+    fi
+
+    echo "[*] Creating symlink in mods directory..."
+    if create_mod_symlink "$mod_name" "$build_dir" "$PROJECT_DIR/mods"; then
+        echo "[+] Symlink created: mods/@${mod_name}/"
+    fi
+
+    echo ""
+    echo "[+] Build complete!"
+    echo ""
+    echo "Module Information:"
+    echo "  Name:       $mod_name"
+    echo "  Version:    $version"
+    echo "  Commit:     $(get_git_commit_hash "$mod_dir")"
+    echo "  Build Time: $(get_build_timestamp)"
+    echo ""
+    echo "Output Files:"
+    ls -lh "$build_dir/addons/"
+    echo ""
+    echo "Ready for server:"
+    echo "  mods/@${mod_name}/"
+}
+
+launch_workbench() {
+      local mod_name=$1
+
+      if [ -z "$mod_name" ]; then
+          echo "[!] Usage: $0 workbench MOD_NAME"
+          echo "[!] Example: $0 workbench mymod"
+          exit 1
+      fi
+
+      local mod_dir="$PROJECT_DIR/pkgs/$mod_name"
+
+      if [ ! -d "$mod_dir" ]; then
+          echo "[!] Error: Mod not found at $mod_dir"
+          exit 1
+      fi
+
+      if ! get_steamcmd; then
+          echo "[!] SteamCMD not found"
+          return 1
+      fi
+
+      local dayz_tools_appid="1559212036"
+      local profiles_dir="$PROJECT_DIR/profiles"
+      mkdir -p "$profiles_dir"
+
+      echo "[*] Launching Workbench for mod: $mod_name"
+
+      "$STEAMCMD_CMD" +@NoPromptForPassword 1 +run_app_build_app "$dayz_tools_appid" -doLogs -profiles="$profiles_dir" -repository="$mod_dir" +quit
+  }
+
+main() {
+     if [ $# -eq 0 ]; then
+         print_usage
+         exit 0
+     fi
+
+      case "$1" in
+          new)
+              new_mod "$2"
+              ;;
+          build)
+              build_mod "$2"
+              ;;
+          workbench)
+              launch_workbench "$2"
+              ;;
+          list)
+              list_mods
+              ;;
+          search)
+              search_mods "${@:2}"
+              ;;
+          add)
+              add_mod "$2" "$3"
+              ;;
+          remove)
+              remove_mod "$2"
+              ;;
+          install)
+              install_mods
+              ;;
+          update)
+              update_mods
+              ;;
+          help|--help|-h)
+              print_usage
+              ;;
+          *)
+              echo "[!] Unknown command: $1"
+              print_usage
+              exit 1
+              ;;
+      esac
 }
 
 main "$@"
