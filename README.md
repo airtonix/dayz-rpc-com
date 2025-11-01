@@ -135,3 +135,4 @@ A streamlined DayZ server setup with the Expansion mod suite, including AI, base
 
 **Last Updated**: 2025-10-31
 **DayZ Expansion Version**: Latest
+# dayz-modding-template
