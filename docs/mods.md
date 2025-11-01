@@ -30,7 +30,7 @@ The default configuration includes 5 essential mods:
 
 ### Method 1: Using cmd/mods
 ```bash
-./cmd/mods add 2116151222 @de
+./cmd/mods enable 2116151222 @de
 ./cmd/mods install
 ```
 
@@ -66,7 +66,7 @@ Then install:
 
 ### Method 1: Using cmd/mods
 ```bash
-./cmd/mods remove @de
+./cmd/mods disable @de
 ```
 
 ### Method 2: Edit config/mods.json
@@ -152,7 +152,7 @@ modDirs[] = {
 
 ### List Installed Mods
 ```bash
-./cmd/mods --list
+./cmd/mods status
 ```
 
 Output:
@@ -171,7 +171,7 @@ Total: 5 mod(s)
 
 ### Update All Mods
 ```bash
-./cmd/mods --update
+./cmd/mods update
 ```
 
 This re-downloads from Steam Workshop, useful for:
@@ -209,24 +209,24 @@ The 5-mod setup is minimal. Other useful Expansion mods:
 
 ```bash
 # Base building
-./cmd/mods --add 2792982513 @de-basebuilding
+./cmd/mods enable 2792982513 @de-basebuilding
 
 # Markets and trading
-./cmd/mods --add 2572328470 @de-market
+./cmd/mods enable 2572328470 @de-market
 
 # Quests
-./cmd/mods --add 2828486817 @de-quests
+./cmd/mods enable 2828486817 @de-quests
 
 # Vehicles
-./cmd/mods --add 2291785437 @de-vehicles
+./cmd/mods enable 2291785437 @de-vehicles
 
 # Animations
-./cmd/mods --add 2793893086 @de-animations
+./cmd/mods enable 2793893086 @de-animations
 ```
 
 Then install and restart:
 ```bash
-./cmd/mods --install
+./cmd/mods install
 ./cmd/server stop
 ./cmd/server start
 ```

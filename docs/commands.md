@@ -61,19 +61,19 @@ Downloads, lists, manages, and builds mods from Steam Workshop and local sources
 ### Commands
 - `new NAME` - Scaffold a new local mod from template
 - `build NAME` - Build local mod into PBO using depbo-tools
-- `list` - List configured mods
+- `status` - Show configured and installed mods
 - `search QUERY` - Search for mods on Steam Workshop
-- `install` - Download and install all configured mods
-- `update` - Update all installed mods to latest version
-- `add ID NAME` - Add a new mod to config
-- `remove NAME` - Remove a mod from config
+- `install` - Download all enabled mods
+- `update` - Update all enabled mods to latest version
+- `enable ID NAME` - Enable a mod (add to config)
+- `disable NAME` - Disable a mod (remove from config)
 - `workbench NAME` - Launch Workbench for a local mod (Windows tools)
 - `help` - Show help message
 
 ### Examples
 ```bash
-# List configured mods
-./cmd/mods list
+# Show configured and installed mods
+./cmd/mods status
 
 # Create a new local mod
 ./cmd/mods new mymod
@@ -84,17 +84,17 @@ Downloads, lists, manages, and builds mods from Steam Workshop and local sources
 # Search for mods on Steam Workshop
 ./cmd/mods search "expansion"
 
-# Install all mods from config
+# Download all enabled mods from config
 ./cmd/mods install
 
 # Update all mods to latest version
 ./cmd/mods update
 
-# Add a new mod from Steam Workshop
-./cmd/mods add 1234567890 @my-mod
+# Enable a new mod from Steam Workshop
+./cmd/mods enable 1234567890 @my-mod
 
-# Remove a mod
-./cmd/mods remove @my-mod
+# Disable a mod
+./cmd/mods disable @my-mod
 ```
 
 ### Local Mod Development
@@ -146,12 +146,17 @@ See [Build Output Documentation](build-output.md) for detailed structure and ver
 
 ### Mod Configuration
 
-Mods are defined in `config/mods.cfg`:
-```bash
-MOD_LIST=(
-    [STEAM_ID]="@folder-name"
-    [1559212036]="@cf"
-)
+Mods are defined in `config/mods.json`:
+```json
+{
+  "mods": [
+    {
+      "id": 1559212036,
+      "name": "@cf",
+      "title": "Community Framework"
+    }
+  ]
+}
 ```
 
 The script will:
@@ -165,7 +170,7 @@ The script will:
 1. Visit Steam Workshop: https://steamcommunity.com/app/221100/workshop/
 2. Find mod page
 3. The URL contains the ID: `...?id=1234567890`
-4. Use this ID in `config/mods.cfg`
+4. Use this ID in `config/mods.json`
 
 ---
 
@@ -268,10 +273,10 @@ tail -f logs/server.log
 ./cmd/server start
 ```
 
-### Mod Addition Workflow
+### Mod Workflow
 ```bash
-# 1. Add mod to config
-./cmd/mods add 2116151222 @de
+# 1. Enable a mod (add to config)
+./cmd/mods enable 2116151222 @de
 
 # 2. Download it
 ./cmd/mods install

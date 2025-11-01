@@ -40,17 +40,17 @@ chmod +x steamcmd.sh
 **Error**: `Failed to download some mods`
 
 **Solutions**:
-1. Verify Workshop ID is correct: `./cmd/mods --list`
+1. Verify Workshop ID is correct: `./cmd/mods status`
 2. Check Steam account has access to mod
 3. Ensure internet connectivity
-4. Try updating: `./cmd/mods --update`
+4. Try updating: `./cmd/mods update`
 
 ### Missing or Corrupt Mods
 **Error**: Server doesn't load mods or crashes
 
 **Solution**: Re-download mods
 ```bash
-./cmd/mods --update
+./cmd/mods update
 ./cmd/server stop
 ./cmd/server start
 ```
@@ -65,9 +65,9 @@ chmod +x steamcmd.sh
    ```
 2. Check mod folder name matches `serverDZ.cfg`
 3. Re-download mods to restore keys:
-   ```bash
-   ./cmd/mods --update
-   ```
+    ```bash
+    ./cmd/mods update
+    ```
 
 ---
 
@@ -350,7 +350,7 @@ free -h
 
 # Steam/server info
 ls -la server/DayZServer
-/cmd/mods --list
+./cmd/mods status
 
 # Last 100 log lines
 tail -100 logs/server.log > debug-logs.txt
@@ -362,7 +362,7 @@ tar -czf debug-bundle.tar.gz logs/ config/ debug-logs.txt
 ### Common Support Resources
 - **Server Logs**: `logs/server.log`
 - **Configuration**: `config/serverDZ.cfg`
-- **Mod Status**: `./cmd/mods --list`
+- **Mod Status**: `./cmd/mods status`
 - **Running Processes**: `ps aux | grep dayz`
 
 ### When Seeking Help

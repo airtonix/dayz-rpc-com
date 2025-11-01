@@ -21,21 +21,21 @@ Commands:
     new NAME                        - Scaffold a new local mod from template
     build NAME                      - Build local mod into PBO using depbo-tools
     workbench NAME                  - Launch Workbench for a local mod
-    list                            - List configured mods
+    status                          - Show configured and installed mods
     search QUERY                    - Search for mods (fuzzy match)
-    add ID NAME                     - Add a mod to config
-    remove NAME                     - Remove a mod from config
-    install                         - Install all configured mods
-    update                          - Update all installed mods
+    enable ID NAME                  - Enable a mod (add to config)
+    disable NAME                    - Disable a mod (remove from config)
+    install                         - Download all enabled mods
+    update                          - Update all enabled mods
     help                            - Show this help message
 
 Examples:
     $0 new mymod
     $0 build mymod
     $0 workbench mymod
-    $0 list
+    $0 status
     $0 search expansion
-    $0 add 1559212036 '@cf'
+    $0 enable 1559212036 '@cf'
     $0 install
     $0 update
 
@@ -99,10 +99,10 @@ create_mod_config() {
     jq -n '{mods: []}' > "$CONFIG_FILE" 2>/dev/null
 
     echo "[+] Created $CONFIG_FILE"
-    echo "[*] Edit this file to add or remove mods as needed"
+    echo "[*] Edit this file to enable or disable mods as needed"
 }
 
-list_mods() {
+status_mods() {
     check_config_exists || return 0
 
     echo "========================================"
@@ -227,7 +227,7 @@ search_mods_simple() {
             echo "$index. $title"
             echo "   ID: $mod_id"
             echo "   Subscribers: $subs"
-            echo "   Add: ./cmd/mods add $mod_id @modname"
+            echo "   Enable: ./cmd/mods enable $mod_id @modname"
             echo ""
 
             ((index++))
@@ -237,13 +237,13 @@ search_mods_simple() {
 
 
 
-add_mod() {
+enable_mod() {
     local mod_id=$1
     local mod_name=$2
 
     if [ -z "$mod_id" ] || [ -z "$mod_name" ]; then
-        echo "[!] Usage: $0 add MOD_ID MOD_NAME"
-        echo "[!] Example: $0 add 1559212036 '@cf'"
+        echo "[!] Usage: $0 enable MOD_ID MOD_NAME"
+        echo "[!] Example: $0 enable 1559212036 '@cf'"
         exit 1
     fi
 
@@ -261,14 +261,14 @@ add_mod() {
 
     mv "$temp_file" "$CONFIG_FILE"
 
-    echo "[+] Added mod: $mod_name (ID: $mod_id)"
+    echo "[+] Enabled mod: $mod_name (ID: $mod_id)"
 }
 
-remove_mod() {
+disable_mod() {
     local mod_name=$1
 
     if [ -z "$mod_name" ]; then
-        echo "[!] Usage: $0 remove MOD_NAME"
+        echo "[!] Usage: $0 disable MOD_NAME"
         exit 1
     fi
 
@@ -286,7 +286,7 @@ remove_mod() {
 
     mv "$temp_file" "$CONFIG_FILE"
 
-    echo "[+] Removed mod: $mod_name"
+    echo "[+] Disabled mod: $mod_name"
 }
 
 install_mods() {
@@ -623,18 +623,18 @@ main() {
           workbench)
               launch_workbench "$2"
               ;;
-          list)
-              list_mods
-              ;;
-          search)
-              search_mods "${@:2}"
-              ;;
-          add)
-              add_mod "$2" "$3"
-              ;;
-          remove)
-              remove_mod "$2"
-              ;;
+           status)
+               status_mods
+               ;;
+           search)
+               search_mods "${@:2}"
+               ;;
+           enable)
+               enable_mod "$2" "$3"
+               ;;
+           disable)
+               disable_mod "$2"
+               ;;
           install)
               install_mods
               ;;

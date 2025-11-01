@@ -82,19 +82,19 @@ Install server and mods in one go:
 ### List Configured Mods
 
 ```bash
-./cmd/mods list
+./cmd/mods status
 ```
 
-### Add a Mod
+### Enable a Mod
 
 ```bash
-./cmd/mods add 1559212036 '@cf'
+./cmd/mods enable 1559212036 '@cf'
 ```
 
-### Remove a Mod
+### Disable a Mod
 
 ```bash
-./cmd/mods remove '@cf'
+./cmd/mods disable '@cf'
 ```
 
 ### Install Configured Mods
@@ -130,46 +130,7 @@ Configured Mods
 Total: 2 mod(s)
 ```
 
-### Add a Mod
 
-```bash
-./scripts/install-mods.sh --add 1559212036 '@cf'
-```
-
-Or using Makefile:
-```bash
-make add-mod ID=1559212036 NAME=@cf
-```
-
-### Remove a Mod
-
-```bash
-./scripts/install-mods.sh --remove '@cf'
-```
-
-Or:
-```bash
-make remove-mod NAME=@cf
-```
-
-### Install Configured Mods
-
-```bash
-./scripts/install-mods.sh --install
-```
-
-This will:
-1. Prompt for Steam credentials
-2. Download mods via SteamCMD from Steam Workshop
-3. Copy mods to `mods/` directory
-4. Convert filenames to lowercase (compatibility)
-5. Extract signing keys to `keys/` directory
-
-### Update All Mods
-
-```bash
-./scripts/install-mods.sh --update
-```
 
 ---
 
@@ -185,7 +146,7 @@ dayz-server/
 │   ├── serverDZ.cfg         # Main server config
 │   ├── mission.xml          # Mission configuration
 │   ├── types.xml            # Item definitions
-│   └── mods.cfg             # Mod configuration
+│   └── mods.json            # Mod configuration (JSON format)
 ├── server/                  # DayZ server installation
 ├── mods/                    # Installed mods
 ├── keys/                    # Mod signing keys
@@ -213,13 +174,18 @@ For detailed options, see [CONFIG_GUIDE.md](CONFIG_GUIDE.md)
 
 ### Edit Mod Config
 
-Edit `config/mods.cfg` to add/remove mods. Format:
+Edit `config/mods.json` to enable/disable mods. Format:
 
-```bash
-declare -A MOD_LIST
-MOD_LIST=(
-    [WORKSHOP_ID]="@mod_folder_name"
-)
+```json
+{
+  "mods": [
+    {
+      "id": 1559212036,
+      "name": "@cf",
+      "title": "Community Framework"
+    }
+  ]
+}
 ```
 
 ### Add Mods to Server Config
@@ -290,12 +256,12 @@ The scripts will prompt for credentials when needed. For automation:
 ```bash
 export STEAMCMD_USERNAME="your_username"
 export STEAMCMD_PASSWORD="your_password"
-./scripts/install-server.sh
+./cmd/install
 ```
 
 ### Mods Not Loading
 
-1. Check `mods/` directory exists with mod folders: `./cmd/mods list`
+1. Check `mods/` directory exists with mod folders: `./cmd/mods status`
 2. Verify mod names in `config/serverDZ.cfg` match folder names
 3. Check mod signing keys in `keys/` directory
 4. Review server logs: `./cmd/server logs-tail`
@@ -319,16 +285,16 @@ export STEAMCMD_PASSWORD="your_password"
 
 ### Install Multiple Mod Packs
 
-Create separate `mods.cfg` files:
+Create separate `mods.json` files:
 
 ```bash
 # For stable server
-cp config/mods.cfg config/mods-stable.cfg
-# Edit config/mods-stable.cfg
+cp config/mods.json config/mods-stable.json
+# Edit config/mods-stable.json
 
 # For experimental
-cp config/mods.cfg config/mods-experimental.cfg
-# Edit config/mods-experimental.cfg
+cp config/mods.json config/mods-experimental.json
+# Edit config/mods-experimental.json
 ```
 
 ### Automate Installation
@@ -373,8 +339,8 @@ tar -xzf backups/mods-backup.tar.gz
 |------|---------|
 | Install stable server | `./cmd/install` |
 | Install experimental | `./cmd/install --experimental` |
-| List mods | `./cmd/mods list` |
-| Add mod | `./cmd/mods add ID @name` |
+| List mods | `./cmd/mods status` |
+| Enable mod | `./cmd/mods enable ID @name` |
 | Install mods | `./cmd/mods install` |
 | Update mods | `./cmd/mods update` |
 | Start server | `./cmd/server start` |
