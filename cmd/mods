@@ -588,7 +588,7 @@ launch_workbench() {
 
       echo "[*] Launching Workbench for mod: $mod_name"
 
-      "$STEAMCMD_CMD" +@NoPromptForPassword 1 +run_app_build_app "$dayz_tools_appid" -doLogs -profiles="$profiles_dir" -repository="$mod_dir" +quit
+      "$STEAMCMD_CMD" +@NoPromptForPassword 1 +app_run "$dayz_tools_appid" -doLogs -profiles="$profiles_dir" -repository="$mod_dir" +quit
   }
 
 main() {
