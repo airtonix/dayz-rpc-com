@@ -132,6 +132,24 @@ status_mods() {
     echo "Total: $mod_count mod(s)"
 }
 
+scrape_workshop_page() {
+    local search_url
+    local html
+    local query
+
+    query="$1"
+    search_url="https://steamcommunity.com/workshop/browse/?appid=$WORKSHOP_ID&searchtext=$(echo "$query" | sed 's/ /%20/g')&numperpage=50"
+    html=$(curl -s -A "Mozilla/5.0" "$search_url" 2>/dev/null)
+
+    if [ -z "$html" ]; then
+        echo "[!] Failed to fetch search results"
+        echo "[*] Visit Steam Workshop: $search_url"
+        return 1
+    fi
+
+    echo "$html"
+}
+
 search_mods() {
     local query="$@"
 
@@ -148,17 +166,7 @@ search_mods() {
     echo "[*] Querying Steam Workshop..."
     echo ""
 
-    local search_url="https://steamcommunity.com/workshop/browse/?appid=$WORKSHOP_ID&searchtext=$(echo "$query" | sed 's/ /%20/g')&numperpage=30"
-
-    local html=$(curl -s -A "Mozilla/5.0" "$search_url" 2>/dev/null)
-
-    if [ -z "$html" ]; then
-        echo "[!] Failed to fetch search results"
-        echo "[*] Visit Steam Workshop: $search_url"
-        return 1
-    fi
-
-    local mod_ids=$(echo "$html" | grep -oP '/sharedfiles/filedetails/\?id=\K\d+' | head -10)
+    local mod_ids=$(echo "$(scrape_workshop_page "$query")" | grep -oP '/sharedfiles/filedetails/\?id=\K\d+' | head -10 | uniq)
 
     if [ -z "$mod_ids" ]; then
         echo "[*] No mods found for '$query'"
@@ -192,47 +200,23 @@ search_mods() {
         return 0
     fi
 
-    local response_file=$(mktemp)
-    echo "$response" > "$response_file"
-
-    search_mods_simple "$response_file"
-
-    rm -f "$response_file"
-}
-
-search_mods_simple() {
-    local response_file=$1
 
     echo "Found mods:"
     echo ""
 
-    local index=1
-    cat "$response_file" | jq -r '.response.publishedfiledetails[] |
+    template="""
+    Title: {title}
+    ID: {id}
+    Subscriptions: {subs}
+    """
+
+    echo "$response" | jq -r '.response.publishedfiledetails[] |
         select(.result == 1 and .publishedfileid != null and .publishedfileid != "") |
-        .title as $title |
-        .publishedfileid as $id |
-        .subscriptions as $subs |
-        "TITLE:\($title|gsub("-"; " ")|gsub("  "; " "))|ID:\($id)|SUBS:\($subs)"' 2>/dev/null | \
-    awk '!seen[$0]++' | \
-    while IFS='|' read -r title_part id_part subs_part; do
-        local title=$(echo "$title_part" | sed 's/^TITLE://')
-        local mod_id=$(echo "$id_part" | sed 's/^ID://')
-        local subs=$(echo "$subs_part" | sed 's/^SUBS://')
-
-        if [ -n "$title" ] && [ -n "$mod_id" ]; then
-            if [ ${#title} -gt 45 ]; then
-                title="${title:0:42}..."
-            fi
-
-            echo "$index. $title"
-            echo "   ID: $mod_id"
-            echo "   Subscribers: $subs"
-            echo "   Enable: ./cmd/mods enable $mod_id @modname"
-            echo ""
-
-            ((index++))
-        fi
-    done
+        " [\(.publishedfileid)] \(.title|gsub("-"; " ")|gsub("  "; " "))\n" +
+        "   created: \(.time_created | strftime("%Y-%m-%d %H:%M:%S"))\n" +
+        "   updated: \(.time_updated | strftime("%Y-%m-%d %H:%M:%S"))\n" +
+        " \n"
+    '
 }
 
 
