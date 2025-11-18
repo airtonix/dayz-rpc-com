@@ -28,6 +28,7 @@ Commands:
     search QUERY                    - Search for mods (fuzzy match)
     enable ID NAME                  - Enable a mod (add to config)
     disable NAME                    - Disable a mod (remove from config)
+    remove NAME_OR_ID               - Remove mod (from config and filesystem)
     install                         - Download all enabled mods
     update                          - Update all enabled mods
     help                            - Show this help message
@@ -691,6 +692,102 @@ client_check() {
         fi
     done
 
+     echo ""
+}
+
+remove_mod() {
+    local mod_identifier=$1
+
+    if [ -z "$mod_identifier" ]; then
+        echo "[!] Usage: $0 remove MOD_NAME_OR_ID"
+        echo "[!] Example: $0 remove @cf"
+        echo "[!] Example: $0 remove 1559212036"
+        exit 1
+    fi
+
+    check_config_exists || return 0
+
+    # Normalize mod name (add @ if not present)
+    local mod_name="$mod_identifier"
+    if [[ ! "$mod_name" =~ ^@ ]]; then
+        mod_name="@$mod_name"
+    fi
+
+    # Try to find mod by name or ID
+    local mod_id=""
+    local mod_path="$PROJECT_DIR/mods/$mod_name"
+
+    # Check if it's an ID instead of a name
+    if [[ "$mod_identifier" =~ ^[0-9]+$ ]]; then
+        # It's an ID - find the name
+        mod_name=$(jq -r ".mods[] | select(.id == $mod_identifier) | .name" "$CONFIG_FILE")
+        if [ -z "$mod_name" ] || [ "$mod_name" = "null" ]; then
+            echo "[!] Error: Mod with ID $mod_identifier not found in config"
+            return 1
+        fi
+        mod_path="$PROJECT_DIR/mods/$mod_name"
+        mod_id="$mod_identifier"
+    else
+        # It's a name - find the ID
+        mod_id=$(jq -r ".mods[] | select(.name == \"$mod_name\") | .id" "$CONFIG_FILE")
+        if [ -z "$mod_id" ] || [ "$mod_id" = "null" ]; then
+            echo "[!] Error: Mod $mod_name not found in config"
+            return 1
+        fi
+    fi
+
+    echo "========================================"
+    echo "Removing Mod"
+    echo "========================================"
+    echo ""
+    echo "Mod Name: $mod_name"
+    echo "Mod ID: $mod_id"
+    echo "Mod Path: $mod_path"
+    echo ""
+
+    read -p "Continue with removal? (y/n) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "[*] Removal cancelled"
+        return 0
+    fi
+
+    # Remove from mods.json
+    echo "[*] Removing from mods.json..."
+    local temp_file=$(mktemp)
+    jq ".mods |= map(select(.name != \"$mod_name\"))" "$CONFIG_FILE" > "$temp_file"
+    mv "$temp_file" "$CONFIG_FILE"
+    echo "[+] Removed from mods.json"
+
+    # Remove from serverDZ.cfg
+    echo "[*] Removing from serverDZ.cfg..."
+    sed -i "/mods\/$mod_name\"/d" "$PROJECT_DIR/config/serverDZ.cfg"
+    sed -i '/,$/N;s/,\n\s*,/,/g' "$PROJECT_DIR/config/serverDZ.cfg"  # Clean up trailing commas
+    echo "[+] Removed from serverDZ.cfg"
+
+    # Handle mod directory removal
+    if [ -d "$mod_path" ]; then
+        echo "[*] Handling mod directory..."
+        
+        # Check if it's a symlink
+        if [ -L "$mod_path" ]; then
+            echo "[*] Mod is symlinked (keeping pkgs/ intact)"
+            rm "$mod_path"
+            echo "[+] Symlink removed"
+        else
+            # It's a real directory
+            echo "[*] Mod is a real directory"
+            rm -rf "$mod_path"
+            echo "[+] Directory removed"
+        fi
+    else
+        echo "[*] Mod directory not found at $mod_path"
+    fi
+
+    echo ""
+    echo "========================================"
+    echo "[+] Removal Complete"
+    echo "========================================"
     echo ""
 }
 
@@ -722,10 +819,13 @@ main() {
             enable)
                 enable_mod "$2" "$3"
                 ;;
-            disable)
-                disable_mod "$2"
-                ;;
-           install)
+             disable)
+                 disable_mod "$2"
+                 ;;
+             remove)
+                 remove_mod "$2"
+                 ;;
+            install)
                install_mods
                ;;
            update)
