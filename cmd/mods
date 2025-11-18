@@ -19,7 +19,7 @@ DayZ Mod Manager
 Usage: $0 [COMMAND] [ARGS]
 
 Commands:
-    new NAME                        - Scaffold a new local mod from template
+    new NAME                        - Scaffold new local mod (auto-registers in configs)
     build NAME                      - Build local mod into PBO using depbo-tools
     workbench NAME                  - Launch Workbench for a local mod
     setup_workdrive [DRIVE]         - Setup symlinks for Workbench (default: P:/)
@@ -491,11 +491,36 @@ new_mod() {
     echo "[+] Location: $mod_dir"
     echo "[+] Symlink: $PROJECT_DIR/mods/$mod_name_formatted"
     echo ""
+
+    # Add to mods.json for tracking
+    echo "[*] Registering mod in config/mods.json..."
+    local temp_file=$(mktemp)
+    jq --arg id "0" --arg name "$mod_name_formatted" --arg title "$mod_name" \
+        '.mods += [{"id": 0, "name": $name, "title": $title}]' \
+        "$PROJECT_DIR/config/mods.json" > "$temp_file"
+    mv "$temp_file" "$PROJECT_DIR/config/mods.json"
+    echo "[+] Added to mods.json (ID: 0 for local dev)"
+
+    # Add to serverDZ.cfg modDirs if not already present
+    echo "[*] Registering mod in serverDZ.cfg..."
+    if ! grep -q "mods/$mod_name_formatted" "$PROJECT_DIR/config/serverDZ.cfg"; then
+        # Add comma to last entry if missing, then insert new mod
+        sed -i "/modDirs\[\] = {/,/^};/{
+            /^};/i\\    \"mods/$mod_name_formatted\",
+            s/\"mods\/@de-ai\"$/\"mods\/@de-ai\",/
+        }" "$PROJECT_DIR/config/serverDZ.cfg"
+        echo "[+] Added to serverDZ.cfg modDirs"
+    else
+        echo "[*] Already in serverDZ.cfg modDirs"
+    fi
+
+    echo ""
     echo "Next steps:"
     echo "  1. Read the modding guide: docs/modding.md"
     echo "  2. Edit $mod_dir/mod.cpp"
     echo "  3. Add scripts to $mod_dir/Scripts/"
     echo "  4. Configure as needed in $mod_dir/config/"
+    echo "  5. Start server: ./cmd/server start"
 }
 
 # We can only setup a workdrive for one mod at a time.
