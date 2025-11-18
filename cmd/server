@@ -173,131 +173,127 @@ cmd_status() {
 }
 
 cmd_start() {
-    local debug_mode=false
+      declare -A args=(
+          [port]="$PORT"
+          [config]="serverDZ.cfg"
+          [cpuCount]="$CPU_CORES"
+      )
+      declare -A mods=()
+      local debug_mode=false
 
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --debug)
-                debug_mode=true
-                shift
-                ;;
-            *)
-                echo "[!] Unknown option: $1"
-                return 1
-                ;;
-        esac
-    done
+     # Parse command line options
+     while [[ $# -gt 0 ]]; do
+         case "$1" in
+             --debug)
+                 debug_mode=true
+                 shift
+                 ;;
+             *)
+                 echo "[!] Unknown option: $1"
+                 return 1
+                 ;;
+         esac
+     done
 
-    sync_config
-    check_server_exists || return 1
-    announce_server
+     sync_config
+     check_server_exists || return 1
+     announce_server
 
-    if [ -f "$PID_FILE" ]; then
-        OLD_PID=$(cat "$PID_FILE")
-        if kill -0 "$OLD_PID" 2>/dev/null; then
-            echo "[*] Stopping existing server (PID: $OLD_PID)"
-            kill "$OLD_PID" || true
-            sleep 5
-        fi
-        rm -f "$PID_FILE"
-    fi
-
-     # Extract mod directories from config file
-     local mods=""
-     if [ -f "$CONFIG_FILE" ]; then
-         # Extract modDirs[] array from config
-         while IFS= read -r line; do
-             # Match lines with "mods/@something"
-             if [[ $line =~ \"mods/@[^\"]+\" ]]; then
-                 # Extract the path
-                 local mod_path=$(echo "$line" | sed -n 's/.*"\(mods\/[^"]*\)".*/\1/p')
-                 if [ -n "$mod_path" ]; then
-                     if [ -z "$mods" ]; then
-                         mods="$PROJECT_DIR/$mod_path"
-                     else
-                         mods="$mods;$PROJECT_DIR/$mod_path"
-                     fi
-                 fi
-             fi
-         done < "$CONFIG_FILE"
+     if [ -f "$PID_FILE" ]; then
+         OLD_PID=$(cat "$PID_FILE")
+         if kill -0 "$OLD_PID" 2>/dev/null; then
+             echo "[*] Stopping existing server (PID: $OLD_PID)"
+             kill "$OLD_PID" || true
+             sleep 5
+         fi
+         rm -f "$PID_FILE"
      fi
 
-    echo "========================================"
-    echo "DayZ Server Startup"
-    echo "========================================"
-    echo ""
-    echo "Configuration:"
-    echo "  Port: $PORT"
-    echo "  Config: $CONFIG_FILE"
-    echo "  Log: $LOG_FILE"
-    echo "  CPU Cores: $CPU_CORES"
-    if [ "$debug_mode" = true ]; then
-        echo "  Mode: DEBUG (foreground)"
-    else
-        echo "  Mode: Normal (background)"
-    fi
-    echo ""
+      # Extract mod directories from config file
+      if [ -f "$CONFIG_FILE" ]; then
+          while IFS= read -r line; do
+              [[ $line =~ \"mods/@[^\"]+\" ]] || continue
 
-    echo "[*] Starting DayZ Server..."
+              local mod_path=$(echo "$line" | sed -n 's/.*"\(mods\/[^"]*\)".*/\1/p')
+              [ -z "$mod_path" ] && continue
 
-    cd "$SERVER_DIR"
+              local mod_name=$(basename "$mod_path")
+              mods[$mod_name]="../$mod_path"
+          done < "$CONFIG_FILE"
+      fi
 
-    echo "" > "$LOG_FILE"
+      if [ ${#mods[@]} -gt 0 ]; then
+          local mod_list=""
+          for mod_path in "${mods[@]}"; do
+              [ -z "$mod_list" ] && mod_list="$mod_path" && continue
+              mod_list="$mod_list;$mod_path"
+          done
+          args[mod]="$mod_list"
+          echo "[*] Loading ${#mods[@]} mod(s)"
+      fi
 
-    # Build the DayZServer command
-    local dayz_cmd="./DayZServer \
-        -port=$PORT \
-        -config=$CONFIG_FILE \
-        -cpuCount=$CPU_CORES"
-
-    if [ -n "$mods" ]; then
-        echo "[*] Loading mods: $mods"
-        dayz_cmd="$dayz_cmd -mod=\"$mods\""
-    fi
-
-    # Show connection info
-    local hostname=$(grep "^hostname" "$CONFIG_FILE" | cut -d'"' -f2)
-    echo ""
-     echo "Connection Info:"
-     echo "  Server: $hostname"
-     echo "  Address: $(get_ip):$PORT"
+     echo "========================================"
+     echo "DayZ Server Startup"
+     echo "========================================"
+     echo ""
+     echo "Configuration:"
+     echo "  Port: ${args[port]}"
+     echo "  Config: ${args[config]}"
+     echo "  Log: $LOG_FILE"
+     echo "  CPU Cores: ${args[cpuCount]}"
+     echo "  Mode: $([ "$debug_mode" = true ] && echo "DEBUG (foreground)" || echo "Normal (background)")"
      echo ""
 
-    # Run in appropriate mode
-    if [ "$debug_mode" = true ]; then
-        echo "[*] Running in DEBUG mode (foreground)..."
-        echo "[*] Logging to: $LOG_FILE"
-        echo "[*] Press Ctrl+C to stop the server"
-        echo ""
+     echo "[*] Starting DayZ Server..."
 
-        eval $dayz_cmd 2>&1 | tee -a "$LOG_FILE"
-        local exit_code=${PIPESTATUS[0]}
+     cd "$SERVER_DIR"
+     echo "" > "$LOG_FILE"
 
-        echo ""
-        echo "[*] Server stopped with exit code: $exit_code"
-        rm -f "$PID_FILE"
-        return $exit_code
-    else
-        # Normal mode - background the process
-        echo "[*] Running in normal mode (background)..."
+     # Show connection info
+     local hostname=$(grep "^hostname" "$CONFIG_FILE" | cut -d'"' -f2)
+     echo ""
+     echo "Connection Info:"
+     echo "  Server: $hostname"
+     echo "  Address: $(get_ip):${args[port]}"
+     echo ""
 
-        if [ -n "$mods" ]; then
-            ./DayZServer \
-                -port=$PORT \
-                -config=$CONFIG_FILE \
-                -cpuCount=$CPU_CORES \
-                -mod="$mods" \
-                >> "$LOG_FILE" 2>&1 &
-        else
-            ./DayZServer \
-                -port=$PORT \
-                -config=$CONFIG_FILE \
-                -cpuCount=$CPU_CORES \
-                >> "$LOG_FILE" 2>&1 &
-        fi
+      # Build and display command
+      echo "[*] Command:"
+      echo "  ./DayZServer"
+      for key in port config cpuCount mod; do
+          [ -z "${args[$key]:-}" ] && continue
+          echo "     -$key=${args[$key]}"
+      done
+      printf "\n\n"
 
-        local server_pid=$!
-        echo $server_pid > "$PID_FILE"
+     # Prepare exec args array
+     local -a exec_args=()
+     exec_args+=("-port=${args[port]}")
+     exec_args+=("-config=${args[config]}")
+     exec_args+=("-cpuCount=${args[cpuCount]}")
+     [ -n "${args[mod]:-}" ] && exec_args+=("-mod=${args[mod]}")
+
+     # Execute server
+     if [ "$debug_mode" = true ]; then
+         echo "[*] Running in DEBUG mode (foreground)..."
+         echo "[*] Logging to: $LOG_FILE"
+         echo "[*] Press Ctrl+C to stop the server"
+         echo ""
+
+         ./DayZServer "${exec_args[@]}" 2>&1 | tee -a "$LOG_FILE"
+         local exit_code=${PIPESTATUS[0]}
+
+         echo ""
+         echo "[*] Server stopped with exit code: $exit_code"
+         rm -f "$PID_FILE"
+         return $exit_code
+     else
+         echo "[*] Running in normal mode (background)..."
+         echo ""
+
+         ./DayZServer "${exec_args[@]}" >> "$LOG_FILE" 2>&1 &
+         local server_pid=$!
+         echo $server_pid > "$PID_FILE"
 
          echo "[+] Server started (PID: $server_pid)"
          echo "[+] Log file: $LOG_FILE"
@@ -309,17 +305,17 @@ cmd_start() {
          echo "  make stop"
          echo ""
 
-        sleep 2
+         sleep 2
 
-        if kill -0 $server_pid 2>/dev/null; then
-            echo "[+] Server is running successfully"
-            return 0
-        else
-            echo "[!] Server failed to start. Check logs:"
-            tail -20 "$LOG_FILE"
-            return 1
-        fi
-    fi
+         if kill -0 $server_pid 2>/dev/null; then
+             echo "[+] Server is running successfully"
+             return 0
+         else
+             echo "[!] Server failed to start. Check logs:"
+             tail -20 "$LOG_FILE"
+             return 1
+         fi
+     fi
 }
 
 cmd_stop() {
