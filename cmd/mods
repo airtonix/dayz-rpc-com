@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # vim: set filetype=bash:
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,6 +24,7 @@ Commands:
     workbench NAME                  - Launch Workbench for a local mod
     setup_workdrive [DRIVE]         - Setup symlinks for Workbench (default: P:/)
     status                          - Show configured and installed mods
+    client-check                    - Check which mods are installed on client
     search QUERY                    - Search for mods (fuzzy match)
     enable ID NAME                  - Enable a mod (add to config)
     disable NAME                    - Disable a mod (remove from config)
@@ -636,49 +637,84 @@ launch_workbench() {
       "$STEAMCMD_CMD" +@NoPromptForPassword 1 +app_run "$dayz_tools_appid" -doLogs -profiles="$profiles_dir" -repository="$mod_dir" +quit
   }
 
+client_check() {
+    check_jq
+
+    check_config_exists || return 0
+
+    echo "========================================"
+    echo "Client Mod Status Check"
+    echo "========================================"
+    echo ""
+
+    local STEAM_WORKSHOP_DIR=".steam/steam/steamapps/workshop/content/$WORKSHOP_ID"
+    local steam_workshop="$HOME/$STEAM_WORKSHOP_DIR"
+
+    echo "Checking mods in Steam Workshop directory:"
+    echo "  ~/$STEAM_WORKSHOP_DIR"
+    echo ""
+
+    jq -r '.mods[] | "\(.name)[\(.id)]"' "$CONFIG_FILE" | while read mod_info; do
+        local mod_id=$(echo "$mod_info" | grep -oP '\[\K[0-9]+(?=\])')
+        local mod_path="$steam_workshop/$mod_id"
+
+        if [ -d "$mod_path" ]; then
+            local file_count=$(find "$mod_path" -type f | wc -l)
+            echo "$mod_info ✓ - $file_count"
+        else
+            echo "$mod_info ✗ - 0"
+        fi
+    done
+
+    echo ""
+}
+
 main() {
      if [ $# -eq 0 ]; then
          print_usage
          exit 0
      fi
 
-      case "$1" in
-          new)
-              new_mod "$2"
-              ;;
-          build)
-              build_mod "$2"
-              ;;
-          workbench)
-              launch_workbench "$2"
-              ;;
-           status)
-               status_mods
+       case "$1" in
+           new)
+               new_mod "$2"
                ;;
-           search)
-               search_mods "${@:2}"
+           build)
+               build_mod "$2"
                ;;
-           enable)
-               enable_mod "$2" "$3"
+           workbench)
+               launch_workbench "$2"
                ;;
-           disable)
-               disable_mod "$2"
+            status)
+                status_mods
+                ;;
+            client-check)
+                client_check
+                ;;
+            search)
+                search_mods "${@:2}"
+                ;;
+            enable)
+                enable_mod "$2" "$3"
+                ;;
+            disable)
+                disable_mod "$2"
+                ;;
+           install)
+               install_mods
                ;;
-          install)
-              install_mods
-              ;;
-          update)
-              update_mods
-              ;;
-          help|--help|-h)
-              print_usage
-              ;;
-          *)
-              echo "[!] Unknown command: $1"
-              print_usage
-              exit 1
-              ;;
-      esac
+           update)
+               update_mods
+               ;;
+           help|--help|-h)
+               print_usage
+               ;;
+           *)
+               echo "[!] Unknown command: $1"
+               print_usage
+               exit 1
+               ;;
+       esac
 }
 
 main "$@"
