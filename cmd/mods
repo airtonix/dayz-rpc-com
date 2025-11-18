@@ -9,6 +9,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 SERVER_DIR="$PROJECT_DIR/server"
 CONFIG_FILE="$PROJECT_DIR/config/mods.json"
 WORKSHOP_ID=221100
+DAYZ_MOD_P_DRIVE="${DAYZ_MOD_P_DRIVE:-/mnt/Store/Projects/Mine/Dayz_P_Drive}"
 
 STEAMCMD_CMD=""
 
@@ -21,6 +22,7 @@ Commands:
     new NAME                        - Scaffold a new local mod from template
     build NAME                      - Build local mod into PBO using depbo-tools
     workbench NAME                  - Launch Workbench for a local mod
+    setup_workdrive [DRIVE]         - Setup symlinks for Workbench (default: P:/)
     status                          - Show configured and installed mods
     search QUERY                    - Search for mods (fuzzy match)
     enable ID NAME                  - Enable a mod (add to config)
@@ -33,6 +35,8 @@ Examples:
     $0 new mymod
     $0 build mymod
     $0 workbench mymod
+    $0 setup_workdrive
+    $0 setup_workdrive /mnt/p
     $0 status
     $0 search expansion
     $0 enable 1559212036 '@cf'
@@ -444,12 +448,14 @@ new_mod() {
     echo "[*] Creating script folders..."
 
     mkdir -p "$mod_dir/$template_token/Scripts/1_Core/$mod_prefix"
+    mkdir -p "$mod_dir/$template_token/Scripts/2_GameLib/$mod_prefix"
     mkdir -p "$mod_dir/$template_token/Scripts/3_Game/$mod_prefix"
     mkdir -p "$mod_dir/$template_token/Scripts/4_World/$mod_prefix"
     mkdir -p "$mod_dir/$template_token/Scripts/5_Mission/$mod_prefix"
 
     echo "[*] Adding guides..."
     echo "# Core" > "$mod_dir/$template_token/Scripts/1_Core/$mod_prefix/README.md"
+    echo "# GameLib" > "$mod_dir/$template_token/Scripts/2_GameLib/$mod_prefix/README.md"
     echo "# Game" > "$mod_dir/$template_token/Scripts/3_Game/$mod_prefix/README.md"
     echo "# World" > "$mod_dir/$template_token/Scripts/4_World/$mod_prefix/README.md"
     echo "# Mission" > "$mod_dir/$template_token/Scripts/5_Mission/$mod_prefix/README.md"
@@ -489,7 +495,46 @@ new_mod() {
     echo "  2. Edit $mod_dir/mod.cpp"
     echo "  3. Add scripts to $mod_dir/Scripts/"
     echo "  4. Configure as needed in $mod_dir/config/"
-  }
+}
+
+# We can only setup a workdrive for one mod at a time.
+setup_workdrive() {
+    local mod_name
+
+    mod_name=$1
+    drive_path="${2:-$DAYZ_MOD_P_DRIVE}"
+    echo "[*] Setting up Workdrive symlinks..."
+    echo "[*] Drive path: $drive_path"
+
+    local mod_folder_name
+    local junction_path
+
+    for dir in "$PROJECT_DIR/pkgs/$mod_name/"*; do
+        if [ -d "$dir/Workbench" ] && [ -f "$dir/Workbench/dayz.gproj" ]; then
+            mod_folder_name=$(basename "$dir")
+            junction_path="$drive_path/$mod_folder_name"
+            echo "[*] Creating symlink for '$mod_folder_name' to '$junction_path'"
+            ln -s "$dir" "$junction_path"
+        fi
+    done
+
+    # for /d %%d in (Dependencies/*) do (
+    #     echo Creating junction for "%%d" to "%drive%/%%d"
+    #     mklink /j "%drive%/%%d" "%cd%/Dependencies/%%d"
+    # )
+    for dir in "$PROJECT_DIR/pkgs/$mod_name/Dependencies/"*; do
+        if [ -d "$dir" ]; then
+            mod_folder_name=$(basename "$dir")
+            junction_path="$drive_path/$mod_folder_name"
+            echo "[*] Creating symlink for dependency '$mod_folder_name' to '$junction_path'"
+            ln -s "$dir" "$junction_path"
+        fi
+    done
+
+    echo "[+] Workdrive setup complete!"
+    echo "[*] To use, map drive %drive% to P: in Workbench."
+    echo "[*] Example: subst P: %drive%"
+}
 
 build_mod() {
     local mod_name=$1

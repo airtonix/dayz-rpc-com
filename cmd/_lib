@@ -4,6 +4,19 @@ DOCKER_READY=0
 HERE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT_DIR="$(git -C "$HERE_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$HERE_DIR")"
 
+function get_ip() {
+    # Try ip command (Linux)
+    if command -v ip >/dev/null 2>&1; then
+        ip route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}'
+    # Try ifconfig (macOS/BSD/old Linux)
+    elif command -v ifconfig >/dev/null 2>&1; then
+        ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1' | head -n1
+    # Fallback to hostname
+    else
+        hostname
+    fi
+}
+
 function requires_command() {
     local cmd="$1"
     local message="$2"
