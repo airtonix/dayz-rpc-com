@@ -25,28 +25,32 @@ PORT=${PORT:-2302}
 CPU_CORES=${CPU_CORES:-$(nproc)}
 
 TEMPLATE_USAGE="""
- DayZ Server Manager
+DayZ Server Manager
 
- Usage: make <command>  OR  $0 <command> [OPTIONS]
+Usage: $0 <command> [OPTIONS]
 
- Using make (recommended):
-     make start           - Start the server (background)
-     make start-debug     - Start the server (foreground, debug mode)
-     make stop            - Stop the server gracefully
-     make status          - Check if server is running
-     make restart         - Restart the server
-     make update          - Update server files via SteamCMD
-     make logs            - View last 100 lines of server log
-     make logs-tail       - Follow server logs in real-time
+Commands:
+    start             - Start the server (background)
+    start --debug     - Start the server (foreground, debug mode)
+    stop              - Stop the server gracefully
+    status            - Check if server is running
+    update            - Update server files via SteamCMD
+    query             - Query local server info and status
+    help              - Show this help message
 
-  Using direct script:
-      $0 start             # Start in background (normal)
-      $0 start --debug     # Start in foreground (debug)
-      $0 stop              # Stop the server
-      $0 update            # Update server files
-      $0 status            # Check if server is running
-      $0 query             # Query server info (like gsquery)
- """
+Environment Variables:
+    PORT              - Server port (default: 2302)
+    CPU_CORES         - Number of CPU cores to use (default: auto-detect)
+
+Examples:
+    $0 start
+    $0 start --debug
+    PORT=2303 $0 start
+    CPU_CORES=4 $0 start
+    $0 stop
+    $0 status
+    $0 query
+"""
 
  print_usage() {
     echo "$TEMPLATE_USAGE"
@@ -123,23 +127,7 @@ cmd_query() {
 
     echo ""
 
-    if cmd_status >/dev/null 2>&1; then
-        echo "[+] Server is running and responding"
 
-        if [ -f "$PID_FILE" ]; then
-            local server_pid=$(cat "$PID_FILE")
-            if [ -n "$server_pid" ]; then
-                local uptime=$(ps -p "$server_pid" -o etime= 2>/dev/null | tr -d ' ' || echo "N/A")
-                local memory=$(ps -p "$server_pid" -o rss= 2>/dev/null | awk '{printf "%.0f MB", $1/1024}' || echo "N/A")
-                echo "Uptime:      $uptime"
-                echo "Memory:      $memory"
-            fi
-        fi
-    else
-        echo "[!] Server is offline"
-    fi
-
-    echo ""
 
     local mod_count=$([ -f "$PROJECT_DIR/config/mods.json" ] && jq '.mods | length' "$PROJECT_DIR/config/mods.json" 2>/dev/null || echo "0")
     echo "Configured Mods: $mod_count"
@@ -149,9 +137,6 @@ cmd_query() {
         echo "Log entries: $log_lines lines"
     fi
 
-    echo ""
-    echo "To query a remote server via A2S protocol:"
-    echo "  $SCRIPT_DIR/query-server <ip> [port]"
     echo ""
 }
 
@@ -209,28 +194,36 @@ cmd_start() {
          rm -f "$PID_FILE"
      fi
 
-      # Extract mod directories from config file
-      if [ -f "$CONFIG_FILE" ]; then
-          while IFS= read -r line; do
-              [[ $line =~ \"mods/@[^\"]+\" ]] || continue
+       # Extract mod directories from serverDZ.cfg
+       # Mods are specified as: modDirs[] = {"mods/@modname", "mods/@other", ...}
+       # This regex finds all quoted mod paths and constructs relative paths
+       if [ -f "$CONFIG_FILE" ]; then
+           while IFS= read -r line; do
+               # Match lines with quoted mod paths like "mods/@modname"
+               [[ $line =~ \"mods/@[^\"]+\" ]] || continue
 
-              local mod_path=$(echo "$line" | sed -n 's/.*"\(mods\/[^"]*\)".*/\1/p')
-              [ -z "$mod_path" ] && continue
+               # Extract the full path from quotes
+               local mod_path=$(echo "$line" | sed -n 's/.*"\(mods\/[^"]*\)".*/\1/p')
+               [ -z "$mod_path" ] && continue
 
-              local mod_name=$(basename "$mod_path")
-              mods[$mod_name]="../$mod_path"
-          done < "$CONFIG_FILE"
-      fi
+               # Get just the mod name (e.g., @modname)
+               local mod_name=$(basename "$mod_path")
+               # Store as relative path from server directory: ../path/to/mods/@modname
+               mods[$mod_name]="../$mod_path"
+           done < "$CONFIG_FILE"
+       fi
 
-      if [ ${#mods[@]} -gt 0 ]; then
-          local mod_list=""
-          for mod_path in "${mods[@]}"; do
-              [ -z "$mod_list" ] && mod_list="$mod_path" && continue
-              mod_list="$mod_list;$mod_path"
-          done
-          args[mod]="$mod_list"
-          echo "[*] Loading ${#mods[@]} mod(s)"
-      fi
+       if [ ${#mods[@]} -gt 0 ]; then
+           # Build semicolon-separated mod list for DayZ server -mod parameter
+           # Format: path1;path2;path3
+           local mod_list=""
+           for mod_path in "${mods[@]}"; do
+               [ -z "$mod_list" ] && mod_list="$mod_path" && continue
+               mod_list="$mod_list;$mod_path"
+           done
+           args[mod]="$mod_list"
+           echo "[*] Loading ${#mods[@]} mod(s)"
+       fi
 
      echo "========================================"
      echo "DayZ Server Startup"

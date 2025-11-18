@@ -12,7 +12,6 @@ SERVER_TYPES[stable]="223350"
 SERVER_TYPES[experimental]="1042420"
 
 STEAMCMD_CMD=""
-INSTALL_MODS_FLAG=false
 SYSTEMD_FLAG=false
 
 declare -A CHECKLIST
@@ -22,19 +21,10 @@ CHECKLIST=(
     [server]="0"
     [config]="0"
     [permissions]="0"
-    [mods]="0"
     [systemd]="0"
 )
 
-TEMPLATE_MODS_CFG="""
-#!/bin/bash
 
-declare -A MOD_LIST
-MOD_LIST=(
-)
-
-export MOD_LIST
-"""
 
 TEMPLATE_SYSTEMD_SERVICE="""
 [Unit]
@@ -61,14 +51,13 @@ Usage: $0 [OPTIONS]
 Options:
     --stable            Install stable DayZ server (default)
     --experimental      Install experimental DayZ server
-    --with-mods         Install mods after server installation
     --systemd           Create systemd service for auto-start
     --help              Show this help message
 
 Examples:
     $0
     $0 --experimental
-    $0 --with-mods --systemd
+    $0 --systemd
 """
 
 function print_usage() {
@@ -90,9 +79,6 @@ function show_checklist() {
     echo "  [$([ ${CHECKLIST[server]} -eq 1 ] && echo 'x' || echo ' ')] Download DayZ server files"
     echo "  [$([ ${CHECKLIST[config]} -eq 1 ] && echo 'x' || echo ' ')] Setup configuration files"
     echo "  [$([ ${CHECKLIST[permissions]} -eq 1 ] && echo 'x' || echo ' ')] Set file permissions"
-    if [ "$INSTALL_MODS_FLAG" = true ]; then
-        echo "  [$([ ${CHECKLIST[mods]} -eq 1 ] && echo 'x' || echo ' ')] Install mods"
-    fi
     if [ "$SYSTEMD_FLAG" = true ]; then
         echo "  [$([ ${CHECKLIST[systemd]} -eq 1 ] && echo 'x' || echo ' ')] Create systemd service"
     fi
@@ -240,97 +226,16 @@ function install_server_files() {
 }
 
 function install_mods() {
-    local steam_user=$1
-    local steam_pass=$2
-
-    if [ -z "$steam_user" ] || [ -z "$steam_pass" ]; then
-        read -p "Enter Steam username: " steam_user
-        read -sp "Enter Steam password: " steam_pass
-        echo ""
-    fi
-
-    echo "[*] Checking for mods to install..."
-
-    if [ ! -f "$PROJECT_DIR/config/mods.cfg" ]; then
-        echo "[!] No mods.cfg found in config/"
-        echo "[*] Creating template..."
-        create_mods_config
-        return 0
-    fi
-
-    source "$PROJECT_DIR/config/mods.cfg"
-
-    if [ ${#MOD_LIST[@]} -eq 0 ]; then
-        echo "[*] No mods configured in mods.cfg"
-        return 0
-    fi
-
-    echo "[*] Installing ${#MOD_LIST[@]} mod(s)..."
-
-    local steamcmd_args=(
-        "+@NoPromptForPassword 1"
-        "+login $steam_user $steam_pass"
-        "+force_install_dir $PROJECT_DIR/server"
-    )
-
-    for mod_id in "${!MOD_LIST[@]}"; do
-        steamcmd_args+=("+workshop_download_item $WORKSHOP_ID $mod_id validate")
-        echo "    - ${MOD_LIST[$mod_id]} (ID: $mod_id)"
-    done
-
-    steamcmd_args+=("+quit")
-
-    if ! run_steamcmd "${steamcmd_args[@]}"; then
-        echo "[!] Failed to download some mods"
-        exit 1
-    fi
-
-    process_mods
+    echo "[*] Mods are managed via ./cmd/mods script"
+    echo "[*] After server installation, use:"
+    echo "    ./cmd/mods enable <MOD_ID> <MOD_NAME>"
+    echo "    ./cmd/mods install"
     mark_complete "mods"
 }
 
-function process_mods() {
-    echo "[*] Processing mods..."
 
-    local mod_count=0
 
-    source "$PROJECT_DIR/config/mods.cfg"
 
-    for mod_id in "${!MOD_LIST[@]}"; do
-        local mod_name="${MOD_LIST[$mod_id]}"
-        local mod_source="$PROJECT_DIR/server/steamapps/workshop/content/$WORKSHOP_ID/$mod_id"
-        local mod_target="$PROJECT_DIR/mods/$mod_name"
-
-        if [ ! -d "$mod_source" ]; then
-            echo "[!] Mod source not found: $mod_source"
-            continue
-        fi
-
-        rm -rf "$mod_target"
-        mkdir -p "$mod_target"
-        cp -r "$mod_source"/* "$mod_target/" 2>/dev/null || true
-
-        find "$mod_target" -depth -execdir bash -c 'mv "$0" "${0,,}"' {} \; 2>/dev/null || true
-
-        if find "$mod_target" -name "*.bikey" | grep -q .; then
-            mkdir -p "$PROJECT_DIR/keys"
-            find "$mod_target" -name "*.bikey" -exec cp {} "$PROJECT_DIR/keys/" \;
-        fi
-
-        ((mod_count++))
-    done
-
-    echo "[+] Processed $mod_count mod(s)"
-}
-
-function create_mods_config() {
-    echo "$TEMPLATE_MODS_CFG" > "$PROJECT_DIR/config/mods.cfg" 2>/dev/null || {
-        echo "[!] Failed to create mods.cfg"
-        return 1
-    }
-    echo "[+] Created template at $PROJECT_DIR/config/mods.cfg"
-    echo "[*] Edit this file to add or remove mods as needed"
-}
 
 function setup_configuration() {
     echo "[*] Setting up configuration files..."
@@ -373,10 +278,6 @@ function main() {
                 server_mode="experimental"
                 shift
                 ;;
-            --with-mods)
-                INSTALL_MODS_FLAG=true
-                shift
-                ;;
             --systemd)
                 SYSTEMD_FLAG=true
                 shift
@@ -403,18 +304,6 @@ function main() {
         exit 1
     fi
 
-    if [ "$INSTALL_MODS_FLAG" = true ]; then
-        echo ""
-        read -p "Install configured mods as well? (y/n) " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            install_mods "$steam_user" "$steam_pass" || {
-                echo "[!] Mod installation failed"
-                exit 1
-            }
-        fi
-    fi
-
     setup_configuration || true
     setup_permissions || true
 
@@ -433,14 +322,16 @@ function main() {
 
     echo "Next steps:"
     echo "1. Review server config: $PROJECT_DIR/config/serverDZ.cfg"
-    echo "2. Download mods: ./cmd/mods --install"
-    echo "3. Start the server: ./cmd/server start"
+    echo "2. Enable mods: ./cmd/mods enable <MOD_ID> <MOD_NAME>"
+    echo "3. Download mods: ./cmd/mods install"
+    echo "4. Start the server: ./cmd/server start"
     echo ""
     echo "Useful commands:"
-    echo "    ./cmd/mods --list       - List configured mods"
+    echo "    ./cmd/mods help         - Show mod management commands"
+    echo "    ./cmd/mods status       - List configured mods"
     echo "    ./cmd/server status     - Show server status"
-    echo "    tail -f logs/server.log       - Follow server logs"
-    echo "    ./cmd/server restart    - Restart the server"
+    echo "    tail -f logs/server.log - Follow server logs"
+    echo "    ./cmd/server stop       - Stop the server"
     echo ""
 
     if [ "$SYSTEMD_FLAG" = true ]; then

@@ -19,16 +19,16 @@ DayZ Mod Manager
 Usage: $0 [COMMAND] [ARGS]
 
 Commands:
-    new NAME                        - Scaffold new local mod (auto-registers in configs)
-    build NAME                      - Build local mod into PBO using depbo-tools
-    workbench NAME                  - Launch Workbench for a local mod
-    setup_workdrive [DRIVE]         - Setup symlinks for Workbench (default: P:/)
+    new NAME                        - Create new local mod (registers in mods.json and serverDZ.cfg)
+    build NAME                      - Build local mod into PBO (requires Docker)
+    workbench NAME                  - Launch Workbench for mod (experimental; requires Steam account)
+    setup_workdrive PATH            - Setup symlinks for Workbench (Linux/WSL only; set DAYZ_MOD_P_DRIVE env var)
     status                          - Show configured and installed mods
-    client-check                    - Check which mods are installed on client
-    search QUERY                    - Search for mods (fuzzy match)
-    enable ID NAME                  - Enable a mod (add to config)
-    disable NAME                    - Disable a mod (remove from config)
-    remove NAME_OR_ID               - Remove mod (from config and filesystem)
+    client-check                    - Verify configured mods in local Steam Workshop cache
+    search QUERY                    - Search for mods on Steam Workshop
+    enable ID NAME                  - Enable a mod (add to mods.json)
+    disable NAME                    - Disable a mod (remove from mods.json)
+    remove NAME_OR_ID               - Remove mod (from mods.json and filesystem)
     install                         - Download all enabled mods
     update                          - Update all enabled mods
     help                            - Show this help message
@@ -37,8 +37,7 @@ Examples:
     $0 new mymod
     $0 build mymod
     $0 workbench mymod
-    $0 setup_workdrive
-    $0 setup_workdrive /mnt/p
+    $0 setup_workdrive /mnt/dayz-workdrive
     $0 status
     $0 search expansion
     $0 enable 1559212036 '@cf'
@@ -530,6 +529,15 @@ setup_workdrive() {
 
     mod_name=$1
     drive_path="${2:-$DAYZ_MOD_P_DRIVE}"
+    
+    if [ -z "$drive_path" ]; then
+        echo "[!] Error: DAYZ_MOD_P_DRIVE environment variable is required"
+        echo "[!] Set it and try again:"
+        echo "    export DAYZ_MOD_P_DRIVE=/path/to/workdrive"
+        echo "    ./cmd/mods setup_workdrive $mod_name"
+        return 1
+    fi
+    
     echo "[*] Setting up Workdrive symlinks..."
     echo "[*] Drive path: $drive_path"
 
@@ -545,10 +553,8 @@ setup_workdrive() {
         fi
     done
 
-    # for /d %%d in (Dependencies/*) do (
-    #     echo Creating junction for "%%d" to "%drive%/%%d"
-    #     mklink /j "%drive%/%%d" "%cd%/Dependencies/%%d"
-    # )
+    # NOTE: Dependencies directory support needs further research and testing
+    # Currently creates symlinks for mod dependencies if they exist
     for dir in "$PROJECT_DIR/pkgs/$mod_name/Dependencies/"*; do
         if [ -d "$dir" ]; then
             mod_folder_name=$(basename "$dir")
@@ -559,8 +565,7 @@ setup_workdrive() {
     done
 
     echo "[+] Workdrive setup complete!"
-    echo "[*] To use, map drive %drive% to P: in Workbench."
-    echo "[*] Example: subst P: %drive%"
+    echo "[*] Symlinks created at: $drive_path"
 }
 
 build_mod() {
@@ -634,34 +639,44 @@ build_mod() {
 }
 
 launch_workbench() {
-      local mod_name=$1
+       local mod_name=$1
 
-      if [ -z "$mod_name" ]; then
-          echo "[!] Usage: $0 workbench MOD_NAME"
-          echo "[!] Example: $0 workbench mymod"
-          exit 1
-      fi
+       if [ -z "$mod_name" ]; then
+           echo "[!] Usage: $0 workbench MOD_NAME"
+           echo "[!] Example: $0 workbench mymod"
+           exit 1
+       fi
 
-      local mod_dir="$PROJECT_DIR/pkgs/$mod_name"
+       local mod_dir="$PROJECT_DIR/pkgs/$mod_name"
 
-      if [ ! -d "$mod_dir" ]; then
-          echo "[!] Error: Mod not found at $mod_dir"
-          exit 1
-      fi
+       if [ ! -d "$mod_dir" ]; then
+           echo "[!] Error: Mod not found at $mod_dir"
+           exit 1
+       fi
 
-      if ! get_steamcmd; then
-          echo "[!] SteamCMD not found"
-          return 1
-      fi
+       if ! get_steamcmd; then
+           echo "[!] SteamCMD not found"
+           return 1
+       fi
 
-      local dayz_tools_appid="1559212036"
-      local profiles_dir="$PROJECT_DIR/profiles"
-      mkdir -p "$profiles_dir"
+       echo "========================================"
+       echo "⚠ WARNING: Workbench Launch (Experimental)"
+       echo "========================================"
+       echo ""
+       echo "This command is highly experimental and may not work as expected."
+       echo "It requires Steam to be installed and your account to have DayZ Tools access."
+       echo ""
 
-      echo "[*] Launching Workbench for mod: $mod_name"
+       local dayz_tools_appid="1559212036"
+       local profiles_dir="$PROJECT_DIR/profiles"
+       mkdir -p "$profiles_dir"
 
-      "$STEAMCMD_CMD" +@NoPromptForPassword 1 +app_run "$dayz_tools_appid" -doLogs -profiles="$profiles_dir" -repository="$mod_dir" +quit
-  }
+       echo "[*] Launching Workbench for mod: $mod_name"
+       echo "[*] If this fails, try launching DayZ Tools manually from Steam"
+       echo ""
+
+       "$STEAMCMD_CMD" +@NoPromptForPassword 1 +app_run "$dayz_tools_appid" -doLogs -profiles="$profiles_dir" -repository="$mod_dir" +quit
+   }
 
 client_check() {
     check_jq
