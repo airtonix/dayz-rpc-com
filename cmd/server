@@ -5,6 +5,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+source "$SCRIPT_DIR/_lib"
+
 SERVER_DIR="$PROJECT_DIR/server"
 LOG_DIR="$PROJECT_DIR/logs"
 BACKUP_DIR="$PROJECT_DIR/backups"
@@ -257,7 +260,7 @@ cmd_start() {
     echo ""
      echo "Connection Info:"
      echo "  Server: $hostname"
-     echo "  Address: $(hostname -I | awk '{print $1}'):$PORT"
+     echo "  Address: $(get_ip):$PORT"
      echo ""
 
     # Run in appropriate mode
