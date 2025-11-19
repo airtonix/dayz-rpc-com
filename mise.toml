@@ -1,2 +1,5 @@
 [tools]
+"pipx:dayz-dev-tools" = "1.8.1"
+python = "latest"
+uv = "latest"
 bats = "latest"
