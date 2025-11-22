@@ -169,10 +169,15 @@ cmd_query() {
     local mod_count=$([ -f "$PROJECT_DIR/config/mods.json" ] && jq '.mods | length' "$PROJECT_DIR/config/mods.json" 2>/dev/null || echo "0")
     echo "Configured Mods: $mod_count"
 
-    if [ -f "$LOG_FILE" ]; then
-        local log_lines=$(wc -l <"$LOG_FILE")
-        echo "Log entries: $log_lines lines"
-    fi
+    local latest_log="$LOG_DIR/server_latest.log"
+     if [ -f "$latest_log" ]; then
+         local log_lines=$(wc -l <"$latest_log")
+         echo "Log entries: $log_lines lines"
+     elif [ -f "$LOG_FILE" ]; then
+         # Fallback for old static log file
+         local log_lines=$(wc -l <"$LOG_FILE")
+         echo "Log entries: $log_lines lines"
+     fi
 
     echo ""
 }
@@ -319,37 +324,46 @@ cmd_start() {
      printf "\n"
 
      # Prepare exec args array
-     local -a exec_args=()
-     exec_args+=("-filepatching=1")
-     exec_args+=("-port=${args[port]}")
-     exec_args+=("-config=${args[config]}")
-     exec_args+=("-cpuCount=${args[cpuCount]}")
-     [ -n "${args[mod]:-}" ] && exec_args+=("--serverMod=${args[mod]}")
+      local -a exec_args=()
+      exec_args+=("-filepatching=1")
+      exec_args+=("-port=${args[port]}")
+      exec_args+=("-config=${args[config]}")
+      exec_args+=("-cpuCount=${args[cpuCount]}")
+      [ -n "${args[mod]:-}" ] && exec_args+=("--serverMod=${args[mod]}")
 
-    # Execute server
-    if [ "$debug_mode" = true ]; then
-        echo "[*] Running in DEBUG mode (foreground)..."
-        echo "[*] Logging to: $LOG_FILE"
-        echo "[*] Press Ctrl+C to stop the server"
-        echo ""
+     # Generate timestamped log filename
+      local timestamp=$(date '+%Y%m%d_%H%M%S')
+      local timestamped_log="$LOG_DIR/server_${timestamp}.log"
+      local latest_log="$LOG_DIR/server_latest.log"
 
-        ./DayZServer "${exec_args[@]}" 2>&1 | tee -a "$LOG_FILE"
-        local exit_code=${PIPESTATUS[0]}
+     # Execute server
+     if [ "$debug_mode" = true ]; then
+         echo "[*] Running in DEBUG mode (foreground)..."
+         echo "[*] Logging to: $timestamped_log"
+         echo "[*] Press Ctrl+C to stop the server"
+         echo ""
 
-        echo ""
-        echo "[*] Server stopped with exit code: $exit_code"
-        rm -f "$PID_FILE"
-        return $exit_code
-    else
-        echo "[*] Running in normal mode (background)..."
-        echo ""
+         ./DayZServer "${exec_args[@]}" 2>&1 | tee -a "$timestamped_log"
+         local exit_code=${PIPESTATUS[0]}
 
-        ./DayZServer "${exec_args[@]}" >>"$LOG_FILE" 2>&1 &
-        local server_pid=$!
-        echo $server_pid >"$PID_FILE"
+         echo ""
+         echo "[*] Server stopped with exit code: $exit_code"
+         rm -f "$PID_FILE"
+         
+         # Create symlink to latest log
+         ln -sf "server_${timestamp}.log" "$latest_log" 2>/dev/null || true
+         return $exit_code
+     else
+         echo "[*] Running in normal mode (background)..."
+         echo ""
 
-        echo "[+] Server started (PID: $server_pid)"
-        echo "[+] Log file: $LOG_FILE"
+         ./DayZServer "${exec_args[@]}" >>"$timestamped_log" 2>&1 &
+         local server_pid=$!
+         echo $server_pid >"$PID_FILE"
+
+         echo "[+] Server started (PID: $server_pid)"
+         echo "[+] Log file: $timestamped_log"
+         echo "[+] Latest log: $latest_log"
         echo ""
         echo "To monitor the server:"
         echo "  make logs-tail"
