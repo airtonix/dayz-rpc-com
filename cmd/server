@@ -215,7 +215,7 @@ cmd_start() {
     fi
 
      # Build mod list from bundle in mods.json (server mods only)
-      local mod_list=$(jq -r --arg bundle "$bundle_name" '.bundles[$bundle].server // [] | map("mods/" + .) | join(";")' "$PROJECT_DIR/config/mods.json")
+      local mod_list=$(jq -r --arg bundle "$bundle_name" '.bundles[$bundle].server // [] | join(";")' "$PROJECT_DIR/config/mods.json")
       
       local mod_count=$(jq -r --arg bundle "$bundle_name" '.bundles[$bundle].server // [] | length' "$PROJECT_DIR/config/mods.json")
       
