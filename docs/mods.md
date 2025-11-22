@@ -12,6 +12,77 @@ The default configuration includes 5 essential mods:
 | DayZ Expansion Core | 2291785308 | @de-core | Core expansion functionality |
 | DayZ Expansion AI | 2792982069 | @de-ai | AI system for NPCs |
 
+## Server vs Client Mods
+
+DayZ distinguishes between server-only mods and client mods, which affects how they're configured:
+
+### Server Mods (ServerMods)
+- Run **only** on the DayZ server
+- Loaded via `--serverMod=@modname` parameter at server startup
+- Don't need to be installed on clients
+- Useful for admin tools, custom server logic, performance optimizations
+- **Example**: `@Zeus` (admin framework)
+- **Enable**: `./cmd/mods enable 0 @Zeus --server`
+
+### Client Mods
+- Installed by players from Steam Workshop
+- Create gameplay features visible to clients
+- Not required in server startup command
+- Must be subscribed to by players to connect (if server has `verifyMods = 1`)
+- **Example**: `@cf`, `@df`, `@de` (frameworks and expansions)
+- **Enable**: `./cmd/mods enable 1559212036 @cf --client`
+
+### Why the Distinction?
+
+| Aspect | Server Mods | Client Mods |
+|--------|-------------|-------------|
+| Installation | Server only | Players' Steam Workshop |
+| Startup Parameter | `--serverMod=@mod1;@mod2` | Not in startup command |
+| Player Requirement | No subscription needed | Must subscribe to join |
+| Use Case | Admin tools, server logic | Gameplay features, content |
+
+### Bundles with Mixed Mods
+
+Bundles organize mods by their role. A bundle separates server and client mods for clarity:
+
+```json
+{
+  "bundles": {
+    "base_expansion": {
+      "server": [
+        "@Zeus"
+      ],
+      "client": [
+        "@cf",
+        "@df",
+        "@de-core",
+        "@de",
+        "@de-ai"
+      ]
+    }
+  }
+}
+```
+
+**Server Behavior**:
+- When starting with bundle `base_expansion`, server loads: `--serverMod=@Zeus`
+- Clients must subscribe to: @cf, @df, @de-core, @de, @de-ai
+
+**Bundle Commands**:
+```bash
+# Add a server-only mod
+./cmd/mods bundle add base_expansion --server @admin-tools
+
+# Add a client mod
+./cmd/mods bundle add base_expansion --client @cosmetics
+
+# Remove a mod (type doesn't matter)
+./cmd/mods bundle remove base_expansion @cosmetics
+
+# View bundle composition
+./cmd/mods bundle list
+```
+
 ## Finding Mods
 
 ### Steam Workshop

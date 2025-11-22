@@ -32,12 +32,14 @@ Commands:
     install                         - Download all enabled mods
     update                          - Update all enabled mods
 
-    # Bundle Management
-    bundle create NAME mod1 mod2... - Create a new mod bundle
-    bundle add NAME mod1 mod2...    - Add mods to an existing bundle
-    bundle remove NAME mod1 mod2... - Remove mods from a bundle
-    bundle delete NAME              - Delete a bundle
-    bundle list                     - List all configured bundles
+     # Bundle Management
+     bundle create NAME --server mod1 mod2...  - Create bundle with server mods
+     bundle create NAME --client mod1 mod2...  - Create bundle with client mods
+     bundle add NAME --server mod1 mod2...     - Add server mods to bundle
+     bundle add NAME --client mod1 mod2...     - Add client mods to bundle
+     bundle remove NAME mod1 mod2...           - Remove mods from bundle (type auto-detected)
+     bundle delete NAME                        - Delete a bundle
+     bundle list                               - List all configured bundles
 
     help                            - Show this help message
 
@@ -52,12 +54,14 @@ Examples:
     $0 install
     $0 update
 
-    # Bundle Examples
-    $0 bundle create base_expansion '@cf' '@df'
-    $0 bundle add base_expansion '@de-core'
-    $0 bundle list
-    $0 bundle remove base_expansion '@de-core'
-    $0 bundle delete base_expansion
+     # Bundle Examples
+     $0 bundle create base_expansion --server '@Zeus'
+     $0 bundle create base_expansion --client '@cf' '@df'
+     $0 bundle add base_expansion --server '@custom-admin'
+     $0 bundle add base_expansion --client '@de-core' '@de'
+     $0 bundle list
+     $0 bundle remove base_expansion '@de-core'
+     $0 bundle delete base_expansion
 """
 
 get_steamcmd() {
@@ -822,116 +826,164 @@ remove_mod() {
 
 # Bundle Management Functions
 list_bundles() {
-     check_config_exists || return 0
+      check_config_exists || return 0
 
-     echo "========================================"
-     echo "Configured Bundles"
-     echo "========================================"
-     echo ""
+      echo "========================================"
+      echo "Configured Bundles"
+      echo "========================================"
+      echo ""
 
-     local bundle_count=$(jq '.bundles | keys | length' "$CONFIG_FILE")
+      local bundle_count=$(jq '.bundles | keys | length' "$CONFIG_FILE")
 
-     if [ "$bundle_count" -eq 0 ]; then
-         echo "[*] No bundles configured"
-         return 0
-     fi
+      if [ "$bundle_count" -eq 0 ]; then
+          echo "[*] No bundles configured"
+          return 0
+      fi
 
-     jq -r '.bundles | keys[] as $bundle | 
-         "\($bundle): " + (.[$bundle] | join(", "))' "$CONFIG_FILE"
+      jq -r '.bundles | keys[] as $bundle | 
+          "\($bundle):\n" +
+          "  Server: " + (if (.[$bundle].server | length) > 0 then (.[$bundle].server | join(", ")) else "[none]" end) + "\n" +
+          "  Client: " + (if (.[$bundle].client | length) > 0 then (.[$bundle].client | join(", ")) else "[none]" end) + "\n"' "$CONFIG_FILE"
 
-     echo ""
-     echo "Total: $bundle_count bundle(s)"
+      echo ""
+      echo "Total: $bundle_count bundle(s)"
 }
 
 create_bundle() {
-     local bundle_name=$1
-     shift
-     local mods=("$@")
+      local bundle_name=$1
+      local mod_type=""
+      shift
+      local mods=("$@")
 
-     check_config_exists || return 0
+      check_config_exists || return 0
 
-     # Validate bundle doesn't already exist
-     if jq -e --arg bundle "$bundle_name" '.bundles | has($bundle)' "$CONFIG_FILE" > /dev/null; then
-         echo "[!] Bundle '$bundle_name' already exists"
-         return 1
-     fi
+      # Check for type flag
+      if [[ "${mods[0]}" == "--server" || "${mods[0]}" == "--client" ]]; then
+          mod_type="${mods[0]}"
+          mods=("${mods[@]:1}")
+      else
+          echo "[!] Error: Bundle creation requires --server or --client flag"
+          echo "[!] Usage: $0 bundle create NAME --server mod1 mod2..."
+          echo "[!]        $0 bundle create NAME --client mod1 mod2..."
+          return 1
+      fi
 
-     # Validate that all mods exist in current mods list
-     for mod in "${mods[@]}"; do
-         if ! jq -e --arg mod "$mod" '.mods[] | select(.name == $mod)' "$CONFIG_FILE" > /dev/null; then
-             echo "[!] Mod '$mod' not found in mods list"
-             return 1
-         fi
-     done
+      if [ ${#mods[@]} -eq 0 ]; then
+          echo "[!] Error: No mods specified"
+          return 1
+      fi
 
-     # Create bundle
-     local temp_file=$(mktemp)
-     jq --arg bundle "$bundle_name" \
-        --argjson mods "$(printf '%s\n' "${mods[@]}" | jq -R . | jq -s .)" \
-        '.bundles += {($bundle): $mods}' "$CONFIG_FILE" > "$temp_file"
+      # Validate bundle doesn't already exist
+      if jq -e --arg bundle "$bundle_name" '.bundles | has($bundle)' "$CONFIG_FILE" > /dev/null; then
+          echo "[!] Bundle '$bundle_name' already exists"
+          return 1
+      fi
 
-     mv "$temp_file" "$CONFIG_FILE"
+      # Validate that all mods exist in current mods list
+      for mod in "${mods[@]}"; do
+          if ! jq -e --arg mod "$mod" '.mods[] | select(.name == $mod)' "$CONFIG_FILE" > /dev/null; then
+              echo "[!] Mod '$mod' not found in mods list"
+              return 1
+          fi
+      done
 
-     echo "[+] Created bundle: $bundle_name"
-     echo "   Mods: $(printf '%s, ' "${mods[@]}")"
+      # Create bundle with server/client structure
+      local temp_file=$(mktemp)
+      if [ "$mod_type" = "--server" ]; then
+          jq --arg bundle "$bundle_name" \
+             --argjson mods "$(printf '%s\n' "${mods[@]}" | jq -R . | jq -s .)" \
+             '.bundles += {($bundle): {server: $mods, client: []}}' "$CONFIG_FILE" > "$temp_file"
+          echo "[+] Created bundle: $bundle_name (server mods)"
+      else
+          jq --arg bundle "$bundle_name" \
+             --argjson mods "$(printf '%s\n' "${mods[@]}" | jq -R . | jq -s .)" \
+             '.bundles += {($bundle): {server: [], client: $mods}}' "$CONFIG_FILE" > "$temp_file"
+          echo "[+] Created bundle: $bundle_name (client mods)"
+      fi
+
+      mv "$temp_file" "$CONFIG_FILE"
+      echo "   Mods: $(printf '%s, ' "${mods[@]}")"
 }
 
 add_to_bundle() {
-     local bundle_name=$1
-     shift
-     local mods=("$@")
+      local bundle_name=$1
+      local mod_type=""
+      shift
+      local mods=("$@")
 
-     check_config_exists || return 0
+      check_config_exists || return 0
 
-     # Validate bundle exists
-     if ! jq -e --arg bundle "$bundle_name" '.bundles | has($bundle)' "$CONFIG_FILE" > /dev/null; then
-         echo "[!] Bundle '$bundle_name' not found"
-         return 1
-     fi
+      # Check for type flag
+      if [[ "${mods[0]}" == "--server" || "${mods[0]}" == "--client" ]]; then
+          mod_type="${mods[0]}"
+          mods=("${mods[@]:1}")
+      else
+          echo "[!] Error: Adding to bundle requires --server or --client flag"
+          echo "[!] Usage: $0 bundle add NAME --server mod1 mod2..."
+          echo "[!]        $0 bundle add NAME --client mod1 mod2..."
+          return 1
+      fi
 
-     # Validate that all mods exist in current mods list
-     for mod in "${mods[@]}"; do
-         if ! jq -e --arg mod "$mod" '.mods[] | select(.name == $mod)' "$CONFIG_FILE" > /dev/null; then
-             echo "[!] Mod '$mod' not found in mods list"
-             return 1
-         fi
-     done
+      if [ ${#mods[@]} -eq 0 ]; then
+          echo "[!] Error: No mods specified"
+          return 1
+      fi
 
-     # Add mods to bundle
-     local temp_file=$(mktemp)
-     jq --arg bundle "$bundle_name" \
-        --argjson mods "$(printf '%s\n' "${mods[@]}" | jq -R . | jq -s .)" \
-        '.bundles[$bundle] += $mods | .bundles[$bundle] |= unique' "$CONFIG_FILE" > "$temp_file"
+      # Validate bundle exists
+      if ! jq -e --arg bundle "$bundle_name" '.bundles | has($bundle)' "$CONFIG_FILE" > /dev/null; then
+          echo "[!] Bundle '$bundle_name' not found"
+          return 1
+      fi
 
-     mv "$temp_file" "$CONFIG_FILE"
+      # Validate that all mods exist in current mods list
+      for mod in "${mods[@]}"; do
+          if ! jq -e --arg mod "$mod" '.mods[] | select(.name == $mod)' "$CONFIG_FILE" > /dev/null; then
+              echo "[!] Mod '$mod' not found in mods list"
+              return 1
+          fi
+      done
 
-     echo "[+] Updated bundle: $bundle_name"
-     echo "   Added: $(printf '%s, ' "${mods[@]}")"
+      # Add mods to appropriate section
+      local temp_file=$(mktemp)
+      if [ "$mod_type" = "--server" ]; then
+          jq --arg bundle "$bundle_name" \
+             --argjson mods "$(printf '%s\n' "${mods[@]}" | jq -R . | jq -s .)" \
+             '.bundles[$bundle].server += $mods | .bundles[$bundle].server |= unique' "$CONFIG_FILE" > "$temp_file"
+      else
+          jq --arg bundle "$bundle_name" \
+             --argjson mods "$(printf '%s\n' "${mods[@]}" | jq -R . | jq -s .)" \
+             '.bundles[$bundle].client += $mods | .bundles[$bundle].client |= unique' "$CONFIG_FILE" > "$temp_file"
+      fi
+
+      mv "$temp_file" "$CONFIG_FILE"
+
+      echo "[+] Updated bundle: $bundle_name"
+      echo "   Added ($mod_type): $(printf '%s, ' "${mods[@]}")"
 }
 
 remove_from_bundle() {
-     local bundle_name=$1
-     shift
-     local mods=("$@")
+      local bundle_name=$1
+      shift
+      local mods=("$@")
 
-     check_config_exists || return 0
+      check_config_exists || return 0
 
-     # Validate bundle exists
-     if ! jq -e --arg bundle "$bundle_name" '.bundles | has($bundle)' "$CONFIG_FILE" > /dev/null; then
-         echo "[!] Bundle '$bundle_name' not found"
-         return 1
-     fi
+      # Validate bundle exists
+      if ! jq -e --arg bundle "$bundle_name" '.bundles | has($bundle)' "$CONFIG_FILE" > /dev/null; then
+          echo "[!] Bundle '$bundle_name' not found"
+          return 1
+      fi
 
-     # Remove mods from bundle
-     local temp_file=$(mktemp)
-     jq --arg bundle "$bundle_name" \
-        --argjson mods "$(printf '%s\n' "${mods[@]}" | jq -R . | jq -s .)" \
-        '.bundles[$bundle] -= $mods' "$CONFIG_FILE" > "$temp_file"
+      # Remove mods from bundle (auto-detect which section they're in)
+      local temp_file=$(mktemp)
+      jq --arg bundle "$bundle_name" \
+         --argjson mods "$(printf '%s\n' "${mods[@]}" | jq -R . | jq -s .)" \
+         '.bundles[$bundle].server -= $mods | .bundles[$bundle].client -= $mods' "$CONFIG_FILE" > "$temp_file"
 
-     mv "$temp_file" "$CONFIG_FILE"
+      mv "$temp_file" "$CONFIG_FILE"
 
-     echo "[+] Updated bundle: $bundle_name"
-     echo "   Removed: $(printf '%s, ' "${mods[@]}")"
+      echo "[+] Updated bundle: $bundle_name"
+      echo "   Removed: $(printf '%s, ' "${mods[@]}")"
 }
 
 remove_bundle() {

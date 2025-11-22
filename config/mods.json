@@ -31,11 +31,18 @@
       "title": "Zeus"
     }
   ],
-  "bundles": {
-    "base_expansion": [
-      "@cf",
-      "@df",
-      "@Zeus"
-    ]
-  }
+   "bundles": {
+     "base_expansion": {
+       "server": [
+         "@Zeus"
+       ],
+       "client": [
+         "@cf",
+         "@df",
+         "@de-core",
+         "@de",
+         "@de-ai"
+       ]
+     }
+   }
 }

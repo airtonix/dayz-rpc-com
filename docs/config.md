@@ -45,6 +45,40 @@ modDirs[] = {
 verifyMods = 1;
 ```
 
+### Mod Startup Parameters
+
+DayZ server uses command-line parameters to load mods at startup. These parameters work in conjunction with the mod directories configured in `serverDZ.cfg`:
+
+#### --serverMod Parameter (Server-Only Mods)
+Specifies mods that run only on the server:
+
+```bash
+./DayZServer --serverMod=@Zeus;@CustomAdmin;@ServerLogic
+```
+
+Server-only mods:
+- Don't need to be on clients
+- Useful for admin tools, server-side logic, performance tuning
+- Won't cause mod mismatch errors if clients don't have them
+
+#### Mod Discovery
+The server discovers mods from the `mods/` directory matching the mod references passed to `--serverMod` or `-mod` parameters.
+
+#### Bundle-Based Mod Loading
+When using the bundle system, mods are organized into server and client categories:
+
+```json
+"base_expansion": {
+  "server": ["@Zeus", "@CustomLogic"],
+  "client": ["@cf", "@df", "@de"]
+}
+```
+
+- **Server mods** are loaded via `--serverMod` parameter
+- **Client mods** are not loaded by the server; players subscribe via Steam Workshop
+
+See `docs/mods.md` for more details on the bundle system and server vs client mods.
+
 ### Gameplay Parameters
 
 ```

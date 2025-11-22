@@ -214,18 +214,18 @@ cmd_start() {
         rm -f "$PID_FILE"
     fi
 
-     # Build mod list from bundle in mods.json
-     local mod_list=$(jq -r --arg bundle "$bundle_name" '.bundles[$bundle] | map("mods/" + .) | join(";")' "$PROJECT_DIR/config/mods.json")
-     
-     if [ -z "$mod_list" ]; then
-         echo "[!] No mods in bundle '$bundle_name'"
-         return 1
-     fi
-     
-     local mod_count=$(jq -r --arg bundle "$bundle_name" '.bundles[$bundle] | length' "$PROJECT_DIR/config/mods.json")
-     
-     args[mod]="$mod_list"
-     echo "[*] Loading $mod_count mod(s) from bundle '$bundle_name'"
+     # Build mod list from bundle in mods.json (server mods only)
+      local mod_list=$(jq -r --arg bundle "$bundle_name" '.bundles[$bundle].server // [] | map("mods/" + .) | join(";")' "$PROJECT_DIR/config/mods.json")
+      
+      local mod_count=$(jq -r --arg bundle "$bundle_name" '.bundles[$bundle].server // [] | length' "$PROJECT_DIR/config/mods.json")
+      
+      if [ -z "$mod_list" ]; then
+          echo "[*] No server mods in bundle '$bundle_name' (client mods are handled via Steam Workshop)"
+          args[mod]=""
+      else
+          args[mod]="$mod_list"
+          echo "[*] Loading $mod_count server mod(s) from bundle '$bundle_name'"
+      fi
 
     echo "========================================"
     echo "DayZ Server Startup"
@@ -253,21 +253,22 @@ cmd_start() {
     echo ""
 
     # Build and display command
-    echo "[*] Command:"
-    echo "  ./DayZServer"
-    for key in port config cpuCount mod; do
-        [ -z "${args[$key]:-}" ] && continue
-        echo "     -$key=${args[$key]}"
-    done
-    printf "\n\n"
+     echo "[*] Command:"
+     echo "  ./DayZServer"
+     echo "     -filepatching=1"
+     echo "     -port=${args[port]}"
+     echo "     -config=${args[config]}"
+     echo "     -cpuCount=${args[cpuCount]}"
+     [ -n "${args[mod]:-}" ] && echo "     --serverMod=${args[mod]}"
+     printf "\n"
 
-    # Prepare exec args array
-    local -a exec_args=()
-    exec_args+=("-filepatching=1")
-    exec_args+=("-port=${args[port]}")
-    exec_args+=("-config=${args[config]}")
-    exec_args+=("-cpuCount=${args[cpuCount]}")
-    [ -n "${args[mod]:-}" ] && exec_args+=("-mod=${args[mod]}")
+     # Prepare exec args array
+     local -a exec_args=()
+     exec_args+=("-filepatching=1")
+     exec_args+=("-port=${args[port]}")
+     exec_args+=("-config=${args[config]}")
+     exec_args+=("-cpuCount=${args[cpuCount]}")
+     [ -n "${args[mod]:-}" ] && exec_args+=("--serverMod=${args[mod]}")
 
     # Execute server
     if [ "$debug_mode" = true ]; then
