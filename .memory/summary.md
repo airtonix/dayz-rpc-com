@@ -81,7 +81,14 @@
   - Commit: `e3b03f8` - fix: remove incorrect 'mods/' prefix from --serverMod parameter
 
 - ✅ Enhanced: Added serverDZ.cfg automatic update on server start
-  - Issue: serverDZ.cfg was not being updated with bundle mods
-  - Solution: sync_config() now extracts mods from bundle and updates modDirs[]
-  - Benefit: Server knows about all available mods, enabling proper verification
-  - Commit: `f05f107` - feat: update serverDZ.cfg modDirs with bundle mods on server start
+   - Issue: serverDZ.cfg was not being updated with bundle mods
+   - Solution: sync_config() now extracts mods from bundle and updates modDirs[]
+   - Benefit: Server knows about all available mods, enabling proper verification
+   - Commit: `f05f107` - feat: update serverDZ.cfg modDirs with bundle mods on server start
+
+- ✅ Enhanced: Added formatted mod listing to server startup output
+   - Issue: Users couldn't easily see which mods were being used at startup
+   - Solution: Display formatted list of server and client mods with clear labels
+   - Output: Shows bundle name, separate sections for server/client mods
+   - Benefit: Improved visibility and debugging when starting server
+   - Commit: `eaebefa` - feat: add formatted mod listing to server startup output
