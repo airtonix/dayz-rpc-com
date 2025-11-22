@@ -60,6 +60,10 @@
 - Changed from `-mod=...` to `--serverMod=...` parameter
 - Only loads mods from the `server` array of the bundle
 - Client mods documented but not loaded by server
+- Automatically updates `serverDZ.cfg` with bundle mods when server starts:
+  - Copies base config from `config/serverDZ.cfg`
+  - Updates `modDirs[]` array with all bundle mods (server + client)
+  - Passes `--serverMod` parameter with server-only mods
 
 ## Testing Results
 - ✅ Bundle listing displays correctly with server/client separation
@@ -69,9 +73,15 @@
 - ✅ Creating new bundles with proper structure works
 - ✅ Duplicate mods handled by unique filter
 
-## Bug Fixes
+## Bug Fixes & Enhancements
 - ✅ Fixed: Removed incorrect `mods/` prefix from --serverMod parameter
   - Issue: Was generating `--serverMod=mods/@Zeus` (incorrect)
   - Fix: Now generates `--serverMod=@Zeus` (correct format)
   - Details: DayZ server automatically looks in mods/ directory, no prefix needed
   - Commit: `e3b03f8` - fix: remove incorrect 'mods/' prefix from --serverMod parameter
+
+- ✅ Enhanced: Added serverDZ.cfg automatic update on server start
+  - Issue: serverDZ.cfg was not being updated with bundle mods
+  - Solution: sync_config() now extracts mods from bundle and updates modDirs[]
+  - Benefit: Server knows about all available mods, enabling proper verification
+  - Commit: `f05f107` - feat: update serverDZ.cfg modDirs with bundle mods on server start
