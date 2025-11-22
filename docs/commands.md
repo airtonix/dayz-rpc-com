@@ -226,14 +226,28 @@ The server reads from `config/serverDZ.cfg`:
 - Other gameplay settings
 
 ### Logs
-Server logs are written to:
-- `logs/server.log` - Main server output
+Each server startup creates a timestamped log file:
+- `logs/server_YYYYMMDD_HHMMSS.log` - Main server output (timestamped)
+- `logs/server_latest.log` - Symlink to the most recent log file
 - `logs/server.pid` - Process ID file
 - `logs/server-status.txt` - Connection info
 
-Monitor with:
+Benefits of timestamped logs:
+- Each server session has its own log file
+- Logs persist after server stops
+- No data loss between restarts
+- Easy to identify logs by startup time
+
+Monitor logs:
 ```bash
-tail -f logs/server.log
+# Monitor latest log in real-time
+tail -f logs/server_latest.log
+
+# View specific server session
+tail -f logs/server_20251123_113045.log
+
+# List all server logs
+ls -lah logs/server_*.log
 ```
 
 ---
