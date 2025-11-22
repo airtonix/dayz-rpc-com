@@ -56,8 +56,6 @@ class CustomMission: MissionServer
 	{
 		EntityAI itemClothing;
 		EntityAI itemEnt;
-		ItemBase itemBs;
-		float rand;
 
 		itemClothing = player.FindAttachmentBySlotName( "Body" );
 		if ( itemClothing )

@@ -263,6 +263,7 @@ cmd_start() {
 
     # Prepare exec args array
     local -a exec_args=()
+    exec_args+=("-filepatching=1")
     exec_args+=("-port=${args[port]}")
     exec_args+=("-config=${args[config]}")
     exec_args+=("-cpuCount=${args[cpuCount]}")

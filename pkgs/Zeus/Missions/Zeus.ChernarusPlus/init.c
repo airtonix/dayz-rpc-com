@@ -56,8 +56,6 @@ class CustomMission: MissionServer
 	{
 		EntityAI itemClothing;
 		EntityAI itemEnt;
-		ItemBase itemBs;
-		float rand;
 
 		itemClothing = player.FindAttachmentBySlotName( "Body" );
 		if ( itemClothing )
@@ -73,7 +71,7 @@ class CustomMission: MissionServer
 			SetRandomHealth( itemEnt );
 			player.SetQuickBarEntityShortcut(itemEnt, 1);
 
-			rand = Math.RandomFloatInclusive( 0.0, 1.0 );
+			float rand = Math.RandomFloatInclusive( 0.0, 1.0 );
 			if ( rand < 0.35 )
 				itemEnt = player.GetInventory().CreateInInventory( "Apple" );
 			else if ( rand > 0.65 )
