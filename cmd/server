@@ -255,25 +255,45 @@ cmd_start() {
       
       local mod_count=$(jq -r --arg bundle "$bundle_name" '.bundles[$bundle].server // [] | length' "$PROJECT_DIR/config/mods.json")
       
-      if [ -z "$mod_list" ]; then
-          echo "[*] No server mods in bundle '$bundle_name' (client mods are handled via Steam Workshop)"
-          args[mod]=""
-      else
-          args[mod]="$mod_list"
-          echo "[*] Loading $mod_count server mod(s) from bundle '$bundle_name'"
-      fi
+       if [ -z "$mod_list" ]; then
+           echo "[*] No server mods in bundle '$bundle_name' (client mods are handled via Steam Workshop)"
+           args[mod]=""
+       else
+           args[mod]="$mod_list"
+           echo "[*] Loading $mod_count server mod(s) from bundle '$bundle_name'"
+       fi
 
-    echo "========================================"
-    echo "DayZ Server Startup"
-    echo "========================================"
-    echo ""
-    echo "Configuration:"
-    echo "  Port: ${args[port]}"
-    echo "  Config: ${args[config]}"
-    echo "  Log: $LOG_FILE"
-    echo "  CPU Cores: ${args[cpuCount]}"
-    echo "  Mode: $([ "$debug_mode" = true ] && echo "DEBUG (foreground)" || echo "Normal (background)")"
-    echo ""
+     echo "========================================"
+     echo "DayZ Server Startup"
+     echo "========================================"
+     echo ""
+     echo "Configuration:"
+     echo "  Port: ${args[port]}"
+     echo "  Config: ${args[config]}"
+     echo "  Log: $LOG_FILE"
+     echo "  CPU Cores: ${args[cpuCount]}"
+     echo "  Mode: $([ "$debug_mode" = true ] && echo "DEBUG (foreground)" || echo "Normal (background)")"
+     echo ""
+
+     # Print mods from bundle
+     echo "Bundle: $bundle_name"
+     local server_mods=$(jq -r --arg bundle "$bundle_name" '.bundles[$bundle].server // [] | .[]' "$PROJECT_DIR/config/mods.json")
+     local client_mods=$(jq -r --arg bundle "$bundle_name" '.bundles[$bundle].client // [] | .[]' "$PROJECT_DIR/config/mods.json")
+     
+     if [ -n "$server_mods" ]; then
+         echo "  Server Mods:"
+         echo "$server_mods" | while read -r mod; do
+             echo "    - $mod"
+         done
+     fi
+     
+     if [ -n "$client_mods" ]; then
+         echo "  Client Mods (Steam Workshop):"
+         echo "$client_mods" | while read -r mod; do
+             echo "    - $mod"
+         done
+     fi
+     echo ""
 
     echo "[*] Starting DayZ Server..."
 
