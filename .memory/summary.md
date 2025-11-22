@@ -68,3 +68,10 @@
 - ✅ Removing mods auto-detects and removes from both sections
 - ✅ Creating new bundles with proper structure works
 - ✅ Duplicate mods handled by unique filter
+
+## Bug Fixes
+- ✅ Fixed: Removed incorrect `mods/` prefix from --serverMod parameter
+  - Issue: Was generating `--serverMod=mods/@Zeus` (incorrect)
+  - Fix: Now generates `--serverMod=@Zeus` (correct format)
+  - Details: DayZ server automatically looks in mods/ directory, no prefix needed
+  - Commit: `e3b03f8` - fix: remove incorrect 'mods/' prefix from --serverMod parameter
