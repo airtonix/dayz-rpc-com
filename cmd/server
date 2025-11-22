@@ -27,11 +27,11 @@ CPU_CORES=${CPU_CORES:-$(nproc)}
 TEMPLATE_USAGE="""
 DayZ Server Manager
 
-Usage: $0 <command> [OPTIONS]
+Usage: $0 <command> [BUNDLE] [OPTIONS]
 
 Commands:
-    start             - Start the server (background)
-    start --debug     - Start the server (foreground, debug mode)
+    start [BUNDLE]    - Start the server (background, optional bundle)
+    start [BUNDLE] --debug  - Start the server (foreground, debug mode)
     stop              - Stop the server gracefully
     status            - Check if server is running
     update            - Update server files via SteamCMD
@@ -43,25 +43,25 @@ Environment Variables:
     CPU_CORES         - Number of CPU cores to use (default: auto-detect)
 
 Examples:
-    $0 start
-    $0 start --debug
-    PORT=2303 $0 start
-    CPU_CORES=4 $0 start
+    $0 start                 - Start with default bundle
+    $0 start base_expansion  - Start with specific bundle
+    $0 start --debug         - Start in debug mode with default bundle
+    $0 start ai_expansion --debug  - Start specific bundle in debug mode
     $0 stop
     $0 status
     $0 query
 """
 
- print_usage() {
+print_usage() {
     echo "$TEMPLATE_USAGE"
- }
+}
 
- check_server_exists() {
-     if [ ! -f "$SERVER_DIR/DayZServer" ]; then
-         echo "[!] Error: DayZ Server executable not found at $SERVER_DIR/DayZServer"
-         echo "[!] Please run: make install"
-         return 1
-     fi
+check_server_exists() {
+    if [ ! -f "$SERVER_DIR/DayZServer" ]; then
+        echo "[!] Error: DayZ Server executable not found at $SERVER_DIR/DayZServer"
+        echo "[!] Please run: make install"
+        return 1
+    fi
 
     if [ ! -f "$CONFIG_FILE" ]; then
         echo "[!] Error: Server config not found at $CONFIG_FILE"
@@ -72,17 +72,20 @@ Examples:
 }
 
 sync_config() {
-    local source_config="$PROJECT_DIR/config/serverDZ.cfg"
+     local source_config="$PROJECT_DIR/config/serverDZ.cfg"
+     local bundle_name=${BUNDLE:-base_expansion}
+     local mods_config="$PROJECT_DIR/config/mods.json"
+     local target_config="$SERVER_DIR/serverDZ.cfg"
 
-    if [ -f "$source_config" ]; then
-        cp "$source_config" "$CONFIG_FILE"
-    fi
+     # Copy base config to server directory
+     # The -mod parameter will be set from mods.json bundle, not from this config file
+     cp "$source_config" "$target_config"
 }
 
 announce_server() {
     local hostname=$(grep "^hostname" "$CONFIG_FILE" | cut -d'"' -f2)
-    echo "Server: $hostname (port $PORT)" > "$STATUS_FILE"
-    echo "If on local network, try: ${hostname// /_}.local:$PORT" >> "$STATUS_FILE"
+    echo "Server: $hostname (port $PORT)" >"$STATUS_FILE"
+    echo "If on local network, try: ${hostname// /_}.local:$PORT" >>"$STATUS_FILE"
 }
 
 cmd_query() {
@@ -127,13 +130,11 @@ cmd_query() {
 
     echo ""
 
-
-
     local mod_count=$([ -f "$PROJECT_DIR/config/mods.json" ] && jq '.mods | length' "$PROJECT_DIR/config/mods.json" 2>/dev/null || echo "0")
     echo "Configured Mods: $mod_count"
 
     if [ -f "$LOG_FILE" ]; then
-        local log_lines=$(wc -l < "$LOG_FILE")
+        local log_lines=$(wc -l <"$LOG_FILE")
         echo "Log entries: $log_lines lines"
     fi
 
@@ -158,157 +159,158 @@ cmd_status() {
 }
 
 cmd_start() {
-      declare -A args=(
-          [port]="$PORT"
-          [config]="serverDZ.cfg"
-          [cpuCount]="$CPU_CORES"
-      )
-      declare -A mods=()
-      local debug_mode=false
+    declare -A args=(
+        [port]="$PORT"
+        [config]="serverDZ.cfg"
+        [cpuCount]="$CPU_CORES"
+    )
+    declare -A mods=()
+    local debug_mode=false
+    local bundle_name="base_expansion"
 
-     # Parse command line options
-     while [[ $# -gt 0 ]]; do
-         case "$1" in
-             --debug)
-                 debug_mode=true
-                 shift
-                 ;;
-             *)
-                 echo "[!] Unknown option: $1"
-                 return 1
-                 ;;
-         esac
-     done
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+        --debug)
+            # Enable debug mode (foreground, verbose logging)
+            debug_mode=true
+            shift
+            ;;
+        *)
+            # First non-flag argument is treated as the bundle name
+            # This allows specifying a different mod configuration bundle
+            # Bundles are defined in config/mods.json
+            if [[ -z "${args[bundle]:-}" ]]; then
+                bundle_name="$1"
+                shift
+            else
+                echo "[!] Unknown option: $1"
+                return 1
+            fi
+            ;;
+        esac
+    done
 
-     sync_config
-     check_server_exists || return 1
-     announce_server
+    # Validate bundle
+    if ! jq -e --arg bundle "$bundle_name" '.bundles[$bundle]' "$PROJECT_DIR/config/mods.json" >/dev/null; then
+        echo "[!] Bundle '$bundle_name' not found"
+        return 1
+    fi
 
-     if [ -f "$PID_FILE" ]; then
-         OLD_PID=$(cat "$PID_FILE")
-         if kill -0 "$OLD_PID" 2>/dev/null; then
-             echo "[*] Stopping existing server (PID: $OLD_PID)"
-             kill "$OLD_PID" || true
-             sleep 5
-         fi
-         rm -f "$PID_FILE"
+    # Export bundle for sync_config
+    export BUNDLE="$bundle_name"
+
+    sync_config
+    check_server_exists || return 1
+    announce_server
+
+    if [ -f "$PID_FILE" ]; then
+        OLD_PID=$(cat "$PID_FILE")
+        if kill -0 "$OLD_PID" 2>/dev/null; then
+            echo "[*] Stopping existing server (PID: $OLD_PID)"
+            kill "$OLD_PID" || true
+            sleep 5
+        fi
+        rm -f "$PID_FILE"
+    fi
+
+     # Build mod list from bundle in mods.json
+     local mod_list=$(jq -r --arg bundle "$bundle_name" '.bundles[$bundle] | map("mods/" + .) | join(";")' "$PROJECT_DIR/config/mods.json")
+     
+     if [ -z "$mod_list" ]; then
+         echo "[!] No mods in bundle '$bundle_name'"
+         return 1
      fi
+     
+     local mod_count=$(jq -r --arg bundle "$bundle_name" '.bundles[$bundle] | length' "$PROJECT_DIR/config/mods.json")
+     
+     args[mod]="$mod_list"
+     echo "[*] Loading $mod_count mod(s) from bundle '$bundle_name'"
 
-       # Extract mod directories from serverDZ.cfg
-       # Mods are specified as: modDirs[] = {"mods/@modname", "mods/@other", ...}
-       # This regex finds all quoted mod paths and constructs relative paths
-       if [ -f "$CONFIG_FILE" ]; then
-           while IFS= read -r line; do
-               # Match lines with quoted mod paths like "mods/@modname"
-               [[ $line =~ \"mods/@[^\"]+\" ]] || continue
+    echo "========================================"
+    echo "DayZ Server Startup"
+    echo "========================================"
+    echo ""
+    echo "Configuration:"
+    echo "  Port: ${args[port]}"
+    echo "  Config: ${args[config]}"
+    echo "  Log: $LOG_FILE"
+    echo "  CPU Cores: ${args[cpuCount]}"
+    echo "  Mode: $([ "$debug_mode" = true ] && echo "DEBUG (foreground)" || echo "Normal (background)")"
+    echo ""
 
-               # Extract the full path from quotes
-               local mod_path=$(echo "$line" | sed -n 's/.*"\(mods\/[^"]*\)".*/\1/p')
-               [ -z "$mod_path" ] && continue
+    echo "[*] Starting DayZ Server..."
 
-               # Get just the mod name (e.g., @modname)
-               local mod_name=$(basename "$mod_path")
-               # Store as relative path from server directory: ../path/to/mods/@modname
-               mods[$mod_name]="../$mod_path"
-           done < "$CONFIG_FILE"
-       fi
+    cd "$SERVER_DIR"
+    echo "" >"$LOG_FILE"
 
-       if [ ${#mods[@]} -gt 0 ]; then
-           # Build semicolon-separated mod list for DayZ server -mod parameter
-           # Format: path1;path2;path3
-           local mod_list=""
-           for mod_path in "${mods[@]}"; do
-               [ -z "$mod_list" ] && mod_list="$mod_path" && continue
-               mod_list="$mod_list;$mod_path"
-           done
-           args[mod]="$mod_list"
-           echo "[*] Loading ${#mods[@]} mod(s)"
-       fi
+    # Show connection info
+    local hostname=$(grep "^hostname" "$CONFIG_FILE" | cut -d'"' -f2)
+    echo ""
+    echo "Connection Info:"
+    echo "  Server: $hostname"
+    echo "  Address: $(get_ip):${args[port]}"
+    echo ""
 
-     echo "========================================"
-     echo "DayZ Server Startup"
-     echo "========================================"
-     echo ""
-     echo "Configuration:"
-     echo "  Port: ${args[port]}"
-     echo "  Config: ${args[config]}"
-     echo "  Log: $LOG_FILE"
-     echo "  CPU Cores: ${args[cpuCount]}"
-     echo "  Mode: $([ "$debug_mode" = true ] && echo "DEBUG (foreground)" || echo "Normal (background)")"
-     echo ""
+    # Build and display command
+    echo "[*] Command:"
+    echo "  ./DayZServer"
+    for key in port config cpuCount mod; do
+        [ -z "${args[$key]:-}" ] && continue
+        echo "     -$key=${args[$key]}"
+    done
+    printf "\n\n"
 
-     echo "[*] Starting DayZ Server..."
+    # Prepare exec args array
+    local -a exec_args=()
+    exec_args+=("-port=${args[port]}")
+    exec_args+=("-config=${args[config]}")
+    exec_args+=("-cpuCount=${args[cpuCount]}")
+    [ -n "${args[mod]:-}" ] && exec_args+=("-mod=${args[mod]}")
 
-     cd "$SERVER_DIR"
-     echo "" > "$LOG_FILE"
+    # Execute server
+    if [ "$debug_mode" = true ]; then
+        echo "[*] Running in DEBUG mode (foreground)..."
+        echo "[*] Logging to: $LOG_FILE"
+        echo "[*] Press Ctrl+C to stop the server"
+        echo ""
 
-     # Show connection info
-     local hostname=$(grep "^hostname" "$CONFIG_FILE" | cut -d'"' -f2)
-     echo ""
-     echo "Connection Info:"
-     echo "  Server: $hostname"
-     echo "  Address: $(get_ip):${args[port]}"
-     echo ""
+        ./DayZServer "${exec_args[@]}" 2>&1 | tee -a "$LOG_FILE"
+        local exit_code=${PIPESTATUS[0]}
 
-      # Build and display command
-      echo "[*] Command:"
-      echo "  ./DayZServer"
-      for key in port config cpuCount mod; do
-          [ -z "${args[$key]:-}" ] && continue
-          echo "     -$key=${args[$key]}"
-      done
-      printf "\n\n"
+        echo ""
+        echo "[*] Server stopped with exit code: $exit_code"
+        rm -f "$PID_FILE"
+        return $exit_code
+    else
+        echo "[*] Running in normal mode (background)..."
+        echo ""
 
-     # Prepare exec args array
-     local -a exec_args=()
-     exec_args+=("-port=${args[port]}")
-     exec_args+=("-config=${args[config]}")
-     exec_args+=("-cpuCount=${args[cpuCount]}")
-     [ -n "${args[mod]:-}" ] && exec_args+=("-mod=${args[mod]}")
+        ./DayZServer "${exec_args[@]}" >>"$LOG_FILE" 2>&1 &
+        local server_pid=$!
+        echo $server_pid >"$PID_FILE"
 
-     # Execute server
-     if [ "$debug_mode" = true ]; then
-         echo "[*] Running in DEBUG mode (foreground)..."
-         echo "[*] Logging to: $LOG_FILE"
-         echo "[*] Press Ctrl+C to stop the server"
-         echo ""
+        echo "[+] Server started (PID: $server_pid)"
+        echo "[+] Log file: $LOG_FILE"
+        echo ""
+        echo "To monitor the server:"
+        echo "  make logs-tail"
+        echo ""
+        echo "To stop the server:"
+        echo "  make stop"
+        echo ""
 
-         ./DayZServer "${exec_args[@]}" 2>&1 | tee -a "$LOG_FILE"
-         local exit_code=${PIPESTATUS[0]}
+        sleep 2
 
-         echo ""
-         echo "[*] Server stopped with exit code: $exit_code"
-         rm -f "$PID_FILE"
-         return $exit_code
-     else
-         echo "[*] Running in normal mode (background)..."
-         echo ""
-
-         ./DayZServer "${exec_args[@]}" >> "$LOG_FILE" 2>&1 &
-         local server_pid=$!
-         echo $server_pid > "$PID_FILE"
-
-         echo "[+] Server started (PID: $server_pid)"
-         echo "[+] Log file: $LOG_FILE"
-         echo ""
-         echo "To monitor the server:"
-         echo "  make logs-tail"
-         echo ""
-         echo "To stop the server:"
-         echo "  make stop"
-         echo ""
-
-         sleep 2
-
-         if kill -0 $server_pid 2>/dev/null; then
-             echo "[+] Server is running successfully"
-             return 0
-         else
-             echo "[!] Server failed to start. Check logs:"
-             tail -20 "$LOG_FILE"
-             return 1
-         fi
-     fi
+        if kill -0 $server_pid 2>/dev/null; then
+            echo "[+] Server is running successfully"
+            return 0
+        else
+            echo "[!] Server failed to start. Check logs:"
+            tail -20 "$LOG_FILE"
+            return 1
+        fi
+    fi
 }
 
 cmd_stop() {
@@ -421,7 +423,7 @@ cmd_update() {
 
     # Check for SteamCMD
     local steamcmd_cmd=""
-    if command -v steamcmd &> /dev/null; then
+    if command -v steamcmd &>/dev/null; then
         steamcmd_cmd="steamcmd"
     elif [ -f "$HOME/.local/share/steamcmd/steamcmd.sh" ]; then
         steamcmd_cmd="$HOME/.local/share/steamcmd/steamcmd.sh"
@@ -461,13 +463,13 @@ cmd_update() {
     echo "========================================"
     echo "Update Complete!"
     echo "========================================"
-     echo ""
-     echo "To restart the server:"
-     echo "  make restart"
-     echo ""
-     echo "Backups are saved in: $BACKUP_DIR"
-     echo ""
- }
+    echo ""
+    echo "To restart the server:"
+    echo "  make restart"
+    echo ""
+    echo "Backups are saved in: $BACKUP_DIR"
+    echo ""
+}
 
 main() {
     if [ $# -eq 0 ]; then
@@ -475,32 +477,32 @@ main() {
         return 0
     fi
 
-     case "$1" in
-         start)
-             shift
-             cmd_start "$@"
-             ;;
-         stop)
-             cmd_stop
-             ;;
-         update)
-             cmd_update
-             ;;
-         status)
-             cmd_status
-             ;;
-         query)
-             cmd_query
-             ;;
-         help)
-             print_usage
-             ;;
-         *)
-             echo "[!] Unknown command: $1"
-             print_usage
-             return 1
-             ;;
-     esac
- }
+    case "$1" in
+    start)
+        shift
+        cmd_start "$@"
+        ;;
+    stop)
+        cmd_stop
+        ;;
+    update)
+        cmd_update
+        ;;
+    status)
+        cmd_status
+        ;;
+    query)
+        cmd_query
+        ;;
+    help)
+        print_usage
+        ;;
+    *)
+        echo "[!] Unknown command: $1"
+        print_usage
+        return 1
+        ;;
+    esac
+}
 
- main "$@"
+main "$@"

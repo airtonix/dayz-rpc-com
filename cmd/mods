@@ -31,6 +31,14 @@ Commands:
     remove NAME_OR_ID               - Remove mod (from mods.json and filesystem)
     install                         - Download all enabled mods
     update                          - Update all enabled mods
+
+    # Bundle Management
+    bundle create NAME mod1 mod2... - Create a new mod bundle
+    bundle add NAME mod1 mod2...    - Add mods to an existing bundle
+    bundle remove NAME mod1 mod2... - Remove mods from a bundle
+    bundle delete NAME              - Delete a bundle
+    bundle list                     - List all configured bundles
+
     help                            - Show this help message
 
 Examples:
@@ -44,6 +52,12 @@ Examples:
     $0 install
     $0 update
 
+    # Bundle Examples
+    $0 bundle create base_expansion '@cf' '@df'
+    $0 bundle add base_expansion '@de-core'
+    $0 bundle list
+    $0 bundle remove base_expansion '@de-core'
+    $0 bundle delete base_expansion
 """
 
 get_steamcmd() {
@@ -806,55 +820,213 @@ remove_mod() {
     echo ""
 }
 
+# Bundle Management Functions
+list_bundles() {
+     check_config_exists || return 0
+
+     echo "========================================"
+     echo "Configured Bundles"
+     echo "========================================"
+     echo ""
+
+     local bundle_count=$(jq '.bundles | keys | length' "$CONFIG_FILE")
+
+     if [ "$bundle_count" -eq 0 ]; then
+         echo "[*] No bundles configured"
+         return 0
+     fi
+
+     jq -r '.bundles | keys[] as $bundle | 
+         "\($bundle): " + (.[$bundle] | join(", "))' "$CONFIG_FILE"
+
+     echo ""
+     echo "Total: $bundle_count bundle(s)"
+}
+
+create_bundle() {
+     local bundle_name=$1
+     shift
+     local mods=("$@")
+
+     check_config_exists || return 0
+
+     # Validate bundle doesn't already exist
+     if jq -e --arg bundle "$bundle_name" '.bundles | has($bundle)' "$CONFIG_FILE" > /dev/null; then
+         echo "[!] Bundle '$bundle_name' already exists"
+         return 1
+     fi
+
+     # Validate that all mods exist in current mods list
+     for mod in "${mods[@]}"; do
+         if ! jq -e --arg mod "$mod" '.mods[] | select(.name == $mod)' "$CONFIG_FILE" > /dev/null; then
+             echo "[!] Mod '$mod' not found in mods list"
+             return 1
+         fi
+     done
+
+     # Create bundle
+     local temp_file=$(mktemp)
+     jq --arg bundle "$bundle_name" \
+        --argjson mods "$(printf '%s\n' "${mods[@]}" | jq -R . | jq -s .)" \
+        '.bundles += {($bundle): $mods}' "$CONFIG_FILE" > "$temp_file"
+
+     mv "$temp_file" "$CONFIG_FILE"
+
+     echo "[+] Created bundle: $bundle_name"
+     echo "   Mods: $(printf '%s, ' "${mods[@]}")"
+}
+
+add_to_bundle() {
+     local bundle_name=$1
+     shift
+     local mods=("$@")
+
+     check_config_exists || return 0
+
+     # Validate bundle exists
+     if ! jq -e --arg bundle "$bundle_name" '.bundles | has($bundle)' "$CONFIG_FILE" > /dev/null; then
+         echo "[!] Bundle '$bundle_name' not found"
+         return 1
+     fi
+
+     # Validate that all mods exist in current mods list
+     for mod in "${mods[@]}"; do
+         if ! jq -e --arg mod "$mod" '.mods[] | select(.name == $mod)' "$CONFIG_FILE" > /dev/null; then
+             echo "[!] Mod '$mod' not found in mods list"
+             return 1
+         fi
+     done
+
+     # Add mods to bundle
+     local temp_file=$(mktemp)
+     jq --arg bundle "$bundle_name" \
+        --argjson mods "$(printf '%s\n' "${mods[@]}" | jq -R . | jq -s .)" \
+        '.bundles[$bundle] += $mods | .bundles[$bundle] |= unique' "$CONFIG_FILE" > "$temp_file"
+
+     mv "$temp_file" "$CONFIG_FILE"
+
+     echo "[+] Updated bundle: $bundle_name"
+     echo "   Added: $(printf '%s, ' "${mods[@]}")"
+}
+
+remove_from_bundle() {
+     local bundle_name=$1
+     shift
+     local mods=("$@")
+
+     check_config_exists || return 0
+
+     # Validate bundle exists
+     if ! jq -e --arg bundle "$bundle_name" '.bundles | has($bundle)' "$CONFIG_FILE" > /dev/null; then
+         echo "[!] Bundle '$bundle_name' not found"
+         return 1
+     fi
+
+     # Remove mods from bundle
+     local temp_file=$(mktemp)
+     jq --arg bundle "$bundle_name" \
+        --argjson mods "$(printf '%s\n' "${mods[@]}" | jq -R . | jq -s .)" \
+        '.bundles[$bundle] -= $mods' "$CONFIG_FILE" > "$temp_file"
+
+     mv "$temp_file" "$CONFIG_FILE"
+
+     echo "[+] Updated bundle: $bundle_name"
+     echo "   Removed: $(printf '%s, ' "${mods[@]}")"
+}
+
+remove_bundle() {
+     local bundle_name=$1
+
+     check_config_exists || return 0
+
+     # Validate bundle exists
+     if ! jq -e --arg bundle "$bundle_name" '.bundles | has($bundle)' "$CONFIG_FILE" > /dev/null; then
+         echo "[!] Bundle '$bundle_name' not found"
+         return 1
+     fi
+
+     # Remove bundle
+     local temp_file=$(mktemp)
+     jq --arg bundle "$bundle_name" 'del(.bundles[$bundle])' "$CONFIG_FILE" > "$temp_file"
+
+     mv "$temp_file" "$CONFIG_FILE"
+
+     echo "[+] Removed bundle: $bundle_name"
+}
+
 main() {
      if [ $# -eq 0 ]; then
          print_usage
          exit 0
      fi
 
-       case "$1" in
-           new)
-               new_mod "$2"
-               ;;
-           build)
-               build_mod "$2"
-               ;;
-           workbench)
-               launch_workbench "$2"
-               ;;
-            status)
-                status_mods
+        case "$1" in
+            new)
+                new_mod "$2"
                 ;;
-            client-check)
-                client_check
+            build)
+                build_mod "$2"
                 ;;
-            search)
-                search_mods "${@:2}"
+            workbench)
+                launch_workbench "$2"
                 ;;
-            enable)
-                enable_mod "$2" "$3"
-                ;;
-             disable)
-                 disable_mod "$2"
+             status)
+                 status_mods
                  ;;
-             remove)
-                 remove_mod "$2"
+             client-check)
+                 client_check
                  ;;
-            install)
-               install_mods
-               ;;
-           update)
-               update_mods
-               ;;
-           help|--help|-h)
-               print_usage
-               ;;
-           *)
-               echo "[!] Unknown command: $1"
-               print_usage
-               exit 1
-               ;;
-       esac
+             search)
+                 search_mods "${@:2}"
+                 ;;
+             enable)
+                 enable_mod "$2" "$3"
+                 ;;
+              disable)
+                  disable_mod "$2"
+                  ;;
+              remove)
+                  remove_mod "$2"
+                  ;;
+             install)
+                install_mods
+                ;;
+            update)
+                update_mods
+                ;;
+            bundle)
+                case "$2" in
+                    create)
+                        create_bundle "${@:3}"
+                        ;;
+                    add)
+                        add_to_bundle "${@:3}"
+                        ;;
+                    remove)
+                        remove_from_bundle "${@:3}"
+                        ;;
+                    delete)
+                        remove_bundle "$3"
+                        ;;
+                    list)
+                        list_bundles
+                        ;;
+                    *)
+                        echo "[!] Unknown bundle command: $2"
+                        print_usage
+                        exit 1
+                        ;;
+                esac
+                ;;
+            help|--help|-h)
+                print_usage
+                ;;
+            *)
+                echo "[!] Unknown command: $1"
+                print_usage
+                exit 1
+                ;;
+        esac
 }
 
 main "$@"

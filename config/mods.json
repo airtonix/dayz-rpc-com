@@ -24,6 +24,18 @@
       "id": 2792982069,
       "name": "@de-ai",
       "title": "DayZ Expansion AI"
+    },
+    {
+      "id": 0,
+      "name": "@Zeus",
+      "title": "Zeus"
     }
-  ]
+  ],
+  "bundles": {
+    "base_expansion": [
+      "@cf",
+      "@df",
+      "@Zeus"
+    ]
+  }
 }
