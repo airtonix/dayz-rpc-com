@@ -77,6 +77,25 @@ When using the bundle system, mods are organized into server and client categori
 - **Server mods** are loaded via `--serverMod` parameter
 - **Client mods** are not loaded by the server; players subscribe via Steam Workshop
 
+#### Automatic serverDZ.cfg Updates
+When you start a server with a bundle, the system automatically:
+
+1. **Copies** your base config from `config/serverDZ.cfg`
+2. **Updates** the `modDirs[]` array to include all mods from the bundle
+3. **Writes** the updated config to `server/serverDZ.cfg`
+4. **Passes** `--serverMod` parameter with server-only mods
+
+Example: Starting with `base_expansion` bundle:
+```bash
+./cmd/server start base_expansion
+```
+
+This generates:
+- `server/serverDZ.cfg` with `modDirs[]` containing all bundle mods
+- Command: `./DayZServer ... --serverMod=@Zeus`
+
+This ensures the server knows about all available mods while only loading the server mods via the `--serverMod` parameter.
+
 See `docs/mods.md` for more details on the bundle system and server vs client mods.
 
 ### Gameplay Parameters
