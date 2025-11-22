@@ -71,51 +71,45 @@ check_server_exists() {
     return 0
 }
 
+# replace "modDirs[] = {};" with the list of server mods from the bundle
 sync_config() {
-     local source_config="$PROJECT_DIR/config/serverDZ.cfg"
-     local bundle_name=${BUNDLE:-base_expansion}
-     local mods_config="$PROJECT_DIR/config/mods.json"
-     local target_config="$SERVER_DIR/serverDZ.cfg"
 
-     # Copy base config to server directory
-     cp "$source_config" "$target_config"
+    local bundle
+    local config_file
+    local server_mods
+    local client_mods
 
-     # Update modDirs[] with mods from the bundle (both server and client)
-     # This ensures the server knows about all mods that might be needed
-     local all_mods=$(jq -r --arg bundle "$bundle_name" '(.bundles[$bundle].server // []) + (.bundles[$bundle].client // []) | map("    \"mods/" + . + "\",") | join("\n")' "$mods_config")
+    # use jq to join both server and client mods for modDirs[]
+    bundle="$1"
+    config_file="$2"
+    server_mods=$(get_bundle_mods "$bundle" "server" || "")
+    client_mods=$(get_bundle_mods "$bundle" "client" || "")
+    
+    joined_mods=$(printf "%s\n%s" "$server_mods" "$client_mods" | sort -u)
+    echo "[*] Mods in bundle '$bundle':"
+    print_mods_list "$joined_mods"
 
-     if [ -n "$all_mods" ]; then
-         # Create a temporary file with the updated config
-         local temp_config=$(mktemp)
-         local in_moddirs=0
-         
-         # Process the config file line by line
-         while IFS= read -r line; do
-             # Skip the old modDirs section
-             if [[ "$line" =~ ^modDirs\[\]\ =\ \{ ]]; then
-                 in_moddirs=1
-                 # Write the new modDirs section
-                 echo "modDirs[] = {" >> "$temp_config"
-                 echo "$all_mods" >> "$temp_config"
-                 continue
-             fi
-             
-              # End of modDirs section
-              if [ $in_moddirs -eq 1 ] && [[ "$line" =~ ^'}' ]]; then
-                  echo "};" >> "$temp_config"
-                  in_moddirs=0
-                  continue
-              fi
-             
-             # Skip lines inside old modDirs section
-             if [ $in_moddirs -eq 0 ]; then
-                 echo "$line" >> "$temp_config"
-             fi
-         done < "$target_config"
-         
-         # Replace original with updated config
-         mv "$temp_config" "$target_config"
-     fi
+    # Build modDirs[] string
+    local mod_dirs_str="modDirs[] = {"
+    local first=true
+    while read -r mod; do
+        if [ -n "$mod" ]; then
+            if [ "$first" = true ]; then
+                first=false
+            else
+                mod_dirs_str+=", "
+            fi
+            mod_dirs_str+="\"$mod\""
+        fi
+    done <<<"$joined_mods"
+    mod_dirs_str+="};"
+    echo "[*] Syncing serverDZ.cfg with mods from bundle '$bundle' to $config_file"
+
+    # Update serverDZ.cfg
+    cat ./config/serverDZ.cfg | \
+        sed -E "s|^modDirs\[\] = \{.*\};|$mod_dirs_str|g" >"$config_file"
+
+    echo "[+] serverDZ.cfg updated with mods from bundle '$bundle'"
 }
 
 announce_server() {
@@ -199,13 +193,74 @@ cmd_status() {
     fi
 }
 
+get_bundle_mods() {
+    local bundle_name
+    local mod_type
+
+    bundle_name="$1"
+    mod_type="$2"  # "server" or "client"
+
+    mods=$(
+        jq -r \
+            --arg bundle "$bundle_name" \
+            --arg type "$mod_type" \
+            '.bundles[$bundle][$type] // [] | .[]' \
+            "$PROJECT_DIR/config/mods.json"
+    )
+
+    if [ $? -ne 0 ]; then
+        echo "[!] Error retrieving mods for bundle '$bundle_name' and type '$mod_type'"
+        exit 1
+    fi
+
+    echo "$mods"
+}
+
+assert_bundle_mods () {
+    local mods
+    mods="$1"
+
+    if [ -z "$mods" ]; then
+        echo "[!] No mods found in the specified bundle"
+        return 1
+    fi
+
+    return 0
+}
+
+print_mods_list() {
+    local mods
+    mods="$1"
+
+    echo "$mods" | while read -r mod; do
+        echo "  - $mod"
+    done
+}
+
+join_mod_for_arg() {
+    local mods
+    mods="$1"
+
+    local joined_mods=""
+    while read -r mod; do
+        if [ -n "$mod" ]; then
+            if [ -z "$joined_mods" ]; then
+                joined_mods="../mods/$mod"
+            else
+                joined_mods+=";../mods/${mod}"
+            fi
+        fi
+    done <<<"$mods"
+
+    echo "$joined_mods"
+}
+
 cmd_start() {
     declare -A args=(
         [port]="$PORT"
         [config]="serverDZ.cfg"
         [cpuCount]="$CPU_CORES"
     )
-    declare -A mods=()
     local debug_mode=false
     local bundle_name="base_expansion"
 
@@ -238,13 +293,6 @@ cmd_start() {
         return 1
     fi
 
-    # Export bundle for sync_config
-    export BUNDLE="$bundle_name"
-
-    sync_config
-    check_server_exists || return 1
-    announce_server
-
     if [ -f "$PID_FILE" ]; then
         OLD_PID=$(cat "$PID_FILE")
         if kill -0 "$OLD_PID" 2>/dev/null; then
@@ -255,50 +303,55 @@ cmd_start() {
         rm -f "$PID_FILE"
     fi
 
-     # Build mod list from bundle in mods.json (server mods only)
-      local mod_list=$(jq -r --arg bundle "$bundle_name" '.bundles[$bundle].server // [] | join(";")' "$PROJECT_DIR/config/mods.json")
-      
-      local mod_count=$(jq -r --arg bundle "$bundle_name" '.bundles[$bundle].server // [] | length' "$PROJECT_DIR/config/mods.json")
-      
-       if [ -z "$mod_list" ]; then
-           echo "[*] No server mods in bundle '$bundle_name' (client mods are handled via Steam Workshop)"
-           args[mod]=""
-       else
-           args[mod]="$mod_list"
-           echo "[*] Loading $mod_count server mod(s) from bundle '$bundle_name'"
-       fi
+    declare -A mods=()
 
-     echo "========================================"
-     echo "DayZ Server Startup"
-     echo "========================================"
-     echo ""
-     echo "Configuration:"
-     echo "  Port: ${args[port]}"
-     echo "  Config: ${args[config]}"
-     echo "  Log: $LOG_FILE"
-     echo "  CPU Cores: ${args[cpuCount]}"
-     echo "  Mode: $([ "$debug_mode" = true ] && echo "DEBUG (foreground)" || echo "Normal (background)")"
-     echo ""
+    # Build mod list from bundle in mods.json (server mods only)
+    args[servermod]=""
+    local server_mod_list=$(get_bundle_mods "$bundle_name" "server")
+    assert_bundle_mods "$server_mod_list" && {
+        local server_mod_count=$(echo "$server_mod_list" | wc -l)
+        echo "[*] Loading $server_mod_count server mod(s) from bundle '$bundle_name'"
+        args[servermod]="$server_mod_list"
+    }
 
-     # Print mods from bundle
-     echo "Bundle: $bundle_name"
-     local server_mods=$(jq -r --arg bundle "$bundle_name" '.bundles[$bundle].server // [] | .[]' "$PROJECT_DIR/config/mods.json")
-     local client_mods=$(jq -r --arg bundle "$bundle_name" '.bundles[$bundle].client // [] | .[]' "$PROJECT_DIR/config/mods.json")
-     
-     if [ -n "$server_mods" ]; then
-         echo "  Server Mods:"
-         echo "$server_mods" | while read -r mod; do
-             echo "    - $mod"
-         done
-     fi
-     
-     if [ -n "$client_mods" ]; then
-         echo "  Client Mods (Steam Workshop):"
-         echo "$client_mods" | while read -r mod; do
-             echo "    - $mod"
-         done
-     fi
-     echo ""
+    args[clientmod]=""
+    local client_mod_list=$(get_bundle_mods "$bundle_name" "client")
+    assert_bundle_mods "$client_mod_list" && {
+        local client_mod_count=$(echo "$client_mod_list" | wc -l)
+        echo "[*] Note: Bundle '$bundle_name' includes $client_mod_count client mod(s) for Steam Workshop"
+        args[clientmod]="$client_mod_list"
+    }
+
+    sync_config "$bundle_name" "./server/serverDZ.cfg"
+    check_server_exists || return 1
+    announce_server
+
+    echo "========================================"
+    echo "DayZ Server Startup"
+    echo "========================================"
+    echo ""
+    echo "Configuration:"
+    echo "  Port: ${args[port]}"
+    echo "  Config: ${args[config]}"
+    echo "  Log: $LOG_FILE"
+    echo "  CPU Cores: ${args[cpuCount]}"
+    echo "  Mode: $([ "$debug_mode" = true ] && echo "DEBUG (foreground)" || echo "Normal (background)")"
+    echo ""
+
+    # Print mods from bundle
+    echo "Bundle: $bundle_name"
+    
+    [ -n "$server_mod_list" ] && {
+        echo "  Server Mods:"
+        print_mods_list "$server_mod_list"
+    }
+
+    [ -n "$client_mod_list" ] && {
+        echo "  Client Mods:"
+        print_mods_list "$client_mod_list"
+    }
+    
+    echo ""
 
     echo "[*] Starting DayZ Server..."
 
@@ -316,11 +369,14 @@ cmd_start() {
     # Build and display command
      echo "[*] Command:"
      echo "  ./DayZServer"
-     echo "     -filepatching=1"
+     echo "     -filepatching"
      echo "     -port=${args[port]}"
      echo "     -config=${args[config]}"
      echo "     -cpuCount=${args[cpuCount]}"
-     [ -n "${args[mod]:-}" ] && echo "     --serverMod=${args[mod]}"
+     server_mod_arg=$(join_mod_for_arg "${args[servermod]}")
+     client_mod_arg=$(join_mod_for_arg "${args[clientmod]}")
+     [ -n "${args[servermod]:-}" ] && echo "     --serverMod=${server_mod_arg}"
+     [ -n "${args[clientmod]:-}" ] && echo "     --mod=${client_mod_arg}"
      printf "\n"
 
      # Prepare exec args array
@@ -329,7 +385,8 @@ cmd_start() {
       exec_args+=("-port=${args[port]}")
       exec_args+=("-config=${args[config]}")
       exec_args+=("-cpuCount=${args[cpuCount]}")
-      [ -n "${args[mod]:-}" ] && exec_args+=("--serverMod=${args[mod]}")
+      [ -n "${args[servermod]:-}" ] && exec_args+=("--serverMod=${server_mod_arg}")
+      [ -n "${args[clientmod]:-}" ] && exec_args+=("--clientMod=${client_mod_arg}")
 
      # Generate timestamped log filename
       local timestamp=$(date '+%Y%m%d_%H%M%S')
@@ -338,32 +395,32 @@ cmd_start() {
 
      # Execute server
      if [ "$debug_mode" = true ]; then
-         echo "[*] Running in DEBUG mode (foreground)..."
-         echo "[*] Logging to: $timestamped_log"
-         echo "[*] Press Ctrl+C to stop the server"
-         echo ""
+        echo "[*] Running in DEBUG mode (foreground)..."
+        echo "[*] Logging to: $timestamped_log"
+        echo "[*] Press Ctrl+C to stop the server"
+        echo ""
 
-         ./DayZServer "${exec_args[@]}" 2>&1 | tee -a "$timestamped_log"
-         local exit_code=${PIPESTATUS[0]}
+        ./DayZServer "${exec_args[@]}" 2>&1 | tee -a "$timestamped_log"
+        local exit_code=${PIPESTATUS[0]}
 
-         echo ""
-         echo "[*] Server stopped with exit code: $exit_code"
-         rm -f "$PID_FILE"
-         
-         # Create symlink to latest log
-         ln -sf "server_${timestamp}.log" "$latest_log" 2>/dev/null || true
-         return $exit_code
+        echo ""
+        echo "[*] Server stopped with exit code: $exit_code"
+        rm -f "$PID_FILE"
+        
+        # Create symlink to latest log
+        ln -sf "server_${timestamp}.log" "$latest_log" 2>/dev/null || true
+        return $exit_code
      else
-         echo "[*] Running in normal mode (background)..."
-         echo ""
+        echo "[*] Running in normal mode (background)..."
+        echo ""
 
-         ./DayZServer "${exec_args[@]}" >>"$timestamped_log" 2>&1 &
-         local server_pid=$!
-         echo $server_pid >"$PID_FILE"
+        ./DayZServer "${exec_args[@]}" >>"$timestamped_log" 2>&1 &
+        local server_pid=$!
+        echo $server_pid >"$PID_FILE"
 
-         echo "[+] Server started (PID: $server_pid)"
-         echo "[+] Log file: $timestamped_log"
-         echo "[+] Latest log: $latest_log"
+        echo "[+] Server started (PID: $server_pid)"
+        echo "[+] Log file: $timestamped_log"
+        echo "[+] Latest log: $latest_log"
         echo ""
         echo "To monitor the server:"
         echo "  make logs-tail"
