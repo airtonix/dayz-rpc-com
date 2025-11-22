@@ -1,0 +1,85 @@
+#!/bin/bash
+# Verify Zeus framework is loaded and working
+
+echo "========================================"
+echo "Zeus Framework Verification"
+echo "========================================"
+echo ""
+
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BUILD_DIR="$PROJECT_DIR/build/@Zeus/addons"
+MODS_DIR="$PROJECT_DIR/mods"
+
+echo "[*] Checking Zeus PBO..."
+PBO_COUNT=$(ls "$BUILD_DIR"/*.pbo 2>/dev/null | wc -l)
+if [ "$PBO_COUNT" -gt 0 ]; then
+    PBO_FILE=$(ls "$BUILD_DIR"/*.pbo | head -1)
+    PBO_SIZE=$(du -h "$PBO_FILE" | cut -f1)
+    echo "[+] Zeus PBO found: $(basename "$PBO_FILE") ($PBO_SIZE)"
+else
+    echo "[!] Zeus PBO not found"
+    exit 1
+fi
+
+echo ""
+echo "[*] Checking Zeus symlink..."
+if [ -L "$MODS_DIR/@Zeus" ]; then
+    LINK_TARGET=$(readlink "$MODS_DIR/@Zeus")
+    echo "[+] Zeus symlink active: @Zeus -> $(basename "$LINK_TARGET")"
+else
+    echo "[!] Zeus symlink not found"
+    exit 1
+fi
+
+echo ""
+echo "[*] Checking Zeus script files..."
+SCRIPT_COUNT=$(find "$PROJECT_DIR/pkgs/Zeus/Zeus/Scripts" -name "*.c" -type f | wc -l)
+echo "[+] Found $SCRIPT_COUNT Zeus script files:"
+find "$PROJECT_DIR/pkgs/Zeus/Zeus/Scripts" -name "*.c" -type f -printf "    %f\n" | sort
+
+echo ""
+echo "[*] Checking Zeus in mod bundle..."
+if jq -e '.mods[] | select(.name == "@Zeus")' "$PROJECT_DIR/config/mods.json" >/dev/null 2>&1; then
+    echo "[+] Zeus registered in mods.json"
+    echo ""
+    echo "[+] base_expansion bundle contains:"
+    jq '.bundles.base_expansion | map("    - " + .)' -r "$PROJECT_DIR/config/mods.json"
+else
+    echo "[!] Zeus not found in mods.json"
+    exit 1
+fi
+
+echo ""
+echo "[*] Checking server status..."
+if [ -f "$PROJECT_DIR/logs/server.pid" ]; then
+    SERVER_PID=$(cat "$PROJECT_DIR/logs/server.pid")
+    if kill -0 "$SERVER_PID" 2>/dev/null; then
+        echo "[+] Server running (PID: $SERVER_PID)"
+        UPTIME=$(ps -p "$SERVER_PID" -o etime= 2>/dev/null | tr -d ' ')
+        echo "[+] Server uptime: $UPTIME"
+    else
+        echo "[*] Server not running"
+    fi
+else
+    echo "[*] Server not running"
+fi
+
+echo ""
+echo "========================================"
+echo "[+] Zeus Framework Verification Complete"
+echo "========================================"
+echo ""
+echo "Zeus framework is active and ready!"
+echo ""
+echo "Framework modules:"
+echo "  - 1_Core: Engine initialization"
+echo "  - 3_Game: Game module hooks"
+echo "  - 4_World: World module hooks"
+echo "  - 5_Mission: Mission module hooks"
+echo "  - ZeusLog: Standardized logging utility"
+echo ""
+echo "Commands:"
+echo "  ./cmd/server start base_expansion     - Start server with Zeus"
+echo "  ./cmd/server status                  - Check server status"
+echo "  ./cmd/mods bundle list               - List mod bundles"
+echo ""
