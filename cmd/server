@@ -78,8 +78,44 @@ sync_config() {
      local target_config="$SERVER_DIR/serverDZ.cfg"
 
      # Copy base config to server directory
-     # The -mod parameter will be set from mods.json bundle, not from this config file
      cp "$source_config" "$target_config"
+
+     # Update modDirs[] with mods from the bundle (both server and client)
+     # This ensures the server knows about all mods that might be needed
+     local all_mods=$(jq -r --arg bundle "$bundle_name" '(.bundles[$bundle].server // []) + (.bundles[$bundle].client // []) | map("    \"mods/" + . + "\",") | join("\n")' "$mods_config")
+
+     if [ -n "$all_mods" ]; then
+         # Create a temporary file with the updated config
+         local temp_config=$(mktemp)
+         local in_moddirs=0
+         
+         # Process the config file line by line
+         while IFS= read -r line; do
+             # Skip the old modDirs section
+             if [[ "$line" =~ ^modDirs\[\]\ =\ \{ ]]; then
+                 in_moddirs=1
+                 # Write the new modDirs section
+                 echo "modDirs[] = {" >> "$temp_config"
+                 echo "$all_mods" >> "$temp_config"
+                 continue
+             fi
+             
+              # End of modDirs section
+              if [ $in_moddirs -eq 1 ] && [[ "$line" =~ ^'}' ]]; then
+                  echo "};" >> "$temp_config"
+                  in_moddirs=0
+                  continue
+              fi
+             
+             # Skip lines inside old modDirs section
+             if [ $in_moddirs -eq 0 ]; then
+                 echo "$line" >> "$temp_config"
+             fi
+         done < "$target_config"
+         
+         # Replace original with updated config
+         mv "$temp_config" "$target_config"
+     fi
 }
 
 announce_server() {
