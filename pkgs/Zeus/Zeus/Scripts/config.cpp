@@ -1,8 +1,12 @@
+// Zeus Framework Configuration
+// This mod provides advanced scripting and administrative tools for DayZ servers
+
 class CfgPatches
 {
-	class MT_Scripts
+	class Zeus_Scripts
 	{
 		requiredAddons[] = { "DZ_Scripts" };
+		requiredVersion = 1.0;
 	};
 };
 
@@ -21,12 +25,12 @@ class CfgMods
 {
     class Zeus
     {
-        name="";
+        name="Zeus";
         dir="Zeus";
         picture="";
         action="";
-        author="";
-        overview = "";
+        author="Zeus Development Team";
+        overview = "Advanced mission scripting and administrative framework for DayZ servers";
 		inputs = "Zeus/Scripts/Inputs.xml";
 		type = "mod";
         defines[] = {};
