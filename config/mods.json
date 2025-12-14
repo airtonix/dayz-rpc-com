@@ -1,34 +1,42 @@
 {
+  "server": "./server/DayZServer",
   "mods": [
     {
       "id": 1559212036,
       "name": "@cf",
-      "title": "Community Framework"
+      "title": "Community Framework",
+      "path": "mods/@cf"
     },
     {
       "id": 2545327648,
       "name": "@df",
-      "title": "Dabs Framework"
+      "title": "Dabs Framework",
+      "path": "mods/@df"
     },
     {
       "id": 2116151222,
       "name": "@de",
-      "title": "DayZ Expansion"
+      "title": "DayZ Expansion",
+      "path": "mods/@de"
     },
     {
       "id": 2291785308,
       "name": "@de-core",
-      "title": "DayZ Expansion Core"
+      "title": "DayZ Expansion Core",
+      "path": "mods/@de-core"
     },
     {
       "id": 2792982069,
       "name": "@de-ai",
-      "title": "DayZ Expansion AI"
+      "title": "DayZ Expansion AI",
+      "path": "mods/@de-ai"
     },
     {
       "id": 0,
-      "name": "@Zeus",
-      "title": "Zeus"
+      "name": "@zeus",
+      "title": "zeus",
+      "development": true,
+      "path": "mods/@zeus"
     }
   ],
   "bundles": {
@@ -38,7 +46,7 @@
     },
     "base_expansion": {
       "server": [
-        "@Zeus"
+        "@zeus"
       ],
       "client": [
         "@cf",
@@ -50,8 +58,9 @@
     },
     "zeus": {
       "server": [
-        "@Zeus"
-      ]
+        "@zeus"
+      ],
+      "client": []
     }
   }
 }

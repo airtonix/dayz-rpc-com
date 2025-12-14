@@ -45,6 +45,35 @@ modDirs[] = {
 verifyMods = 1;
 ```
 
+#### mods.json Configuration
+
+The `config/mods.json` file defines mod metadata including paths. The server location is specified at the root:
+
+```json
+{
+  "server": "./server/DayZServer",
+  "mods": [
+    {
+      "id": 1559212036,
+      "name": "@cf",
+      "title": "Community Framework",
+      "path": "mods/@cf"
+    }
+  ]
+}
+```
+
+**The `server` field** tells the system where the DayZ server binary is located. This is used to compute relative paths:
+
+- **Value**: Relative path from repo root to server binary (e.g., `./server/DayZServer`)
+- **Purpose**: Allows the system to compute server-relative paths for `modDirs[]` in serverDZ.cfg
+- **Default**: `./server/DayZServer` (if not specified)
+
+**Path computation example**:
+- Server binary at: `./server/DayZServer`
+- Mod at: `mods/@zeus` (repo-relative)
+- Computed path in serverDZ.cfg: `../mods/@zeus` (server-relative)
+
 ### Mod Startup Parameters
 
 DayZ server uses command-line parameters to load mods at startup. These parameters work in conjunction with the mod directories configured in `serverDZ.cfg`:

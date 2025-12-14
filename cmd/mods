@@ -125,6 +125,25 @@ create_mod_config() {
     echo "[*] Edit this file to enable or disable mods as needed"
 }
 
+get_mod_path() {
+    local mod_name="$1"
+    local path
+    
+    path=$(
+        jq -r \
+            --arg name "$mod_name" \
+            '.mods[] | select(.name == $name) | .path' \
+            "$CONFIG_FILE" 2>/dev/null
+    )
+    
+    if [ -z "$path" ]; then
+        # Fallback to default pattern if path field not found
+        echo "mods/$mod_name"
+    else
+        echo "$path"
+    fi
+}
+
 status_mods() {
     check_config_exists || return 0
 
@@ -513,8 +532,8 @@ new_mod() {
     # Add to mods.json for tracking
     echo "[*] Registering mod in config/mods.json..."
     local temp_file=$(mktemp)
-    jq --arg id "0" --arg name "$mod_name_formatted" --arg title "$mod_name" \
-        '.mods += [{"id": 0, "name": $name, "title": $title}]' \
+    jq --arg id "0" --arg name "$mod_name_formatted" --arg title "$mod_name" --arg path "mods/$mod_name_formatted" \
+        '.mods += [{"id": 0, "name": $name, "title": $title, "path": $path, "development": true}]' \
         "$PROJECT_DIR/config/mods.json" > "$temp_file"
     mv "$temp_file" "$PROJECT_DIR/config/mods.json"
     echo "[+] Added to mods.json (ID: 0 for local dev)"

@@ -97,6 +97,69 @@ Bundles organize mods by their role. A bundle separates server and client mods f
 3. Right-click mod → "Copy Link"
 4. Extract ID from URL
 
+## Mod Configuration File Structure
+
+### mods.json Format
+
+The `config/mods.json` file defines all available mods and their properties:
+
+```json
+{
+  "server": "./server/DayZServer",
+  "mods": [
+    {
+      "id": 1559212036,
+      "name": "@cf",
+      "title": "Community Framework",
+      "path": "mods/@cf"
+    }
+  ],
+  "bundles": { ... }
+}
+```
+
+**Field Descriptions**:
+
+| Field | Purpose | Example |
+|-------|---------|---------|
+| `server` | Path to server binary (used for relative path computation) | `./server/DayZServer` |
+| `id` | Steam Workshop ID (0 for local dev mods) | `1559212036` |
+| `name` | Mod identifier with @ prefix | `@cf` |
+| `title` | Human-readable mod name | `Community Framework` |
+| `path` | Relative path to mod directory (repo-relative) | `mods/@cf` |
+| `development` | Flag for local development mods | `true` |
+
+### The `path` Field
+
+The `path` field is critical for server startup. It defines where the mod is located relative to the repository root:
+
+- **Purpose**: Allows flexible mod placement and dynamic path computation
+- **Format**: Repository-relative path (e.g., `mods/@modname`, `custom-mods/@modname`)
+- **Automatic**: When using `./cmd/mods register`, the path is populated automatically
+- **Custom Paths**: You can set custom paths for mods in different locations:
+
+```json
+{
+  "mods": [
+    {
+      "id": 2116151222,
+      "name": "@de",
+      "path": "mods/@de"
+    },
+    {
+      "id": 999999999,
+      "name": "@custom-location",
+      "path": "custom-mods/@custom-location"
+    }
+  ]
+}
+```
+
+When the server starts, it computes relative paths from the server binary location. For example:
+- Mod path: `mods/@de` (repo-relative)
+- Server binary: `./server/DayZServer`
+- Result: `../mods/@de` (server-relative, in serverDZ.cfg)
+
 ## Adding a Mod
 
 ### Method 1: Using cmd/mods
@@ -112,17 +175,20 @@ Bundles organize mods by their role. A bundle separates server and client mods f
     {
       "id": 1559212036,
       "name": "@cf",
-      "title": "Community Framework"
+      "title": "Community Framework",
+      "path": "mods/@cf"
     },
     {
       "id": 2116151222,
       "name": "@de",
-      "title": "DayZ Expansion"
+      "title": "DayZ Expansion",
+      "path": "mods/@de"
     },
     {
       "id": 999999999,
       "name": "@new-mod",
-      "title": "New Mod"
+      "title": "New Mod",
+      "path": "mods/@new-mod"
     }
   ]
 }

@@ -82,8 +82,8 @@ sync_config() {
     # use jq to join both server and client mods for modDirs[]
     bundle="$1"
     config_file="$2"
-    server_mods=$(get_bundle_mods "$bundle" "server" || "")
-    client_mods=$(get_bundle_mods "$bundle" "client" || "")
+    server_mods=$(get_bundle_mod_paths "$bundle" "server" || "")
+    client_mods=$(get_bundle_mod_paths "$bundle" "client" || "")
 
     joined_mods=$(printf "%s\n%s" "$server_mods" "$client_mods" | sort -u)
     echo "[*] Mods in bundle '$bundle':"
@@ -99,7 +99,7 @@ sync_config() {
             else
                 mod_dirs_str+=", "
             fi
-            mod_dirs_str+="\"../mods/$mod\""
+            mod_dirs_str+="\"$mod\""
         fi
     done <<<"$joined_mods"
     mod_dirs_str+="};"
@@ -193,6 +193,43 @@ cmd_status() {
     fi
 }
 
+get_mod_path() {
+    local mod_name="$1"
+    local path
+    
+    path=$(
+        jq -r \
+            --arg name "$mod_name" \
+            '.mods[] | select(.name == $name) | .path' \
+            "$PROJECT_DIR/config/mods.json" 2>/dev/null
+    )
+    
+    if [ -z "$path" ]; then
+        # Fallback to default pattern if path field not found
+        echo "mods/$mod_name"
+    else
+        echo "$path"
+    fi
+}
+
+compute_relative_path() {
+    local mod_path="$1"
+    local server_binary="$2"
+    
+    # Count directory depth (remove leading ./ and count remaining slashes)
+    local clean_path="${server_binary#./}"  # Remove leading ./
+    local depth=$(echo "$clean_path" | tr -cd '/' | wc -c)
+    
+    # Build relative prefix (../ repeated for each directory level)
+    local rel_prefix=""
+    for ((i = 0; i < depth; i++)); do
+        rel_prefix="../${rel_prefix}"
+    done
+    
+    # Return the relative path
+    echo "${rel_prefix}${mod_path}"
+}
+
 get_bundle_mods() {
     local bundle_name
     local mod_type
@@ -214,6 +251,34 @@ get_bundle_mods() {
     fi
 
     echo "$mods"
+}
+
+get_bundle_mod_paths() {
+    local bundle_name="$1"
+    local mod_type="$2"
+    
+    # Get server binary path from config
+    local server_binary=$(jq -r '.server // "./server/DayZServer"' "$PROJECT_DIR/config/mods.json")
+    
+    # Get mod names from bundle
+    local mod_names=$(get_bundle_mods "$bundle_name" "$mod_type")
+    
+    # Convert each mod name to a path
+    local paths=""
+    while read -r mod_name; do
+        if [ -n "$mod_name" ]; then
+            local mod_path=$(get_mod_path "$mod_name")
+            local relative_path=$(compute_relative_path "$mod_path" "$server_binary")
+            if [ -z "$paths" ]; then
+                paths="$relative_path"
+            else
+                paths="${paths}
+${relative_path}"
+            fi
+        fi
+    done <<<"$mod_names"
+    
+    echo "$paths"
 }
 
 assert_bundle_mods() {
@@ -308,18 +373,20 @@ cmd_start() {
     # Build mod list from bundle in mods.json (server mods only)
     args[servermod]=""
     local server_mod_list=$(get_bundle_mods "$bundle_name" "server")
+    local server_mod_paths=$(get_bundle_mod_paths "$bundle_name" "server")
     assert_bundle_mods "$server_mod_list" && {
         local server_mod_count=$(echo "$server_mod_list" | wc -l)
         echo "[*] Loading $server_mod_count server mod(s) from bundle '$bundle_name'"
-        args[servermod]="$server_mod_list"
+        args[servermod]="$server_mod_paths"
     }
 
     args[clientmod]=""
     local client_mod_list=$(get_bundle_mods "$bundle_name" "client")
+    local client_mod_paths=$(get_bundle_mod_paths "$bundle_name" "client")
     assert_bundle_mods "$client_mod_list" && {
         local client_mod_count=$(echo "$client_mod_list" | wc -l)
         echo "[*] Note: Bundle '$bundle_name' includes $client_mod_count client mod(s) for Steam Workshop"
-        args[clientmod]="$client_mod_list"
+        args[clientmod]="$client_mod_paths"
     }
 
     sync_config "$bundle_name" "./server/serverDZ.cfg"
