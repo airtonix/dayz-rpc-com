@@ -64,3 +64,12 @@ venv/
 
 # Process
 *.pid
+
+
+# Dayz Server Files
+profile/
+mpmissions/
+!mpmissions/*/init.c
+keys/
+backups/
+build/

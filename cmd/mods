@@ -605,7 +605,7 @@ build_mod() {
     check_docker
 
     local version=$(calculate_mod_version "$mod_dir")
-    local pbo_filename="${mod_name}-${version}.pbo"
+    local pbo_filename="${mod_name}.pbo"
     local build_dir="$PROJECT_DIR/build/@$mod_name"
     mkdir -p "$build_dir/addons" "$build_dir/keys"
 
